@@ -30,11 +30,12 @@ public class OreAnnounceFeature {
             onBlockBreak((ServerWorld) world, (ServerPlayerEntity) player, pos, state);
         });
 
-        CollectiveBlockEvents.BLOCK_PLACE.register((World world, BlockPos blockPos, BlockState blockState,
-                LivingEntity livingEntity, ItemStack itemStack) -> {
-            // No debug output, no logic needed for now
-            return false;
-        });
+        // The following lambda parameter types may be incorrect for your version of Collective. If you get a build error here, try removing or commenting out this event registration, or check the documentation for the correct parameter types for BLOCK_PLACE in com.natamus.collective.fabric.callbacks.CollectiveBlockEvents.
+        // CollectiveBlockEvents.BLOCK_PLACE.register((World world, BlockPos blockPos, BlockState blockState,
+        //        LivingEntity livingEntity, ItemStack itemStack) -> {
+        //    // No debug output, no logic needed for now
+        //    return false;
+        //});
     }
 
     public static void onBlockBreak(ServerWorld world, ServerPlayerEntity player, BlockPos pos, BlockState state) {

@@ -1,10 +1,8 @@
 plugins {
-    id 'fabric-loom' version '1.1-SNAPSHOT'
+    id 'fabric-loom' version '1.6.9'
     id 'maven-publish'
     id 'idea'
 }
-
-archivesBaseName = "${mod_name}-fabric-${minecraft_version}"
 
 repositories {
     maven { url "https://maven.terraformersmc.com/releases/" }
@@ -12,21 +10,21 @@ repositories {
 }
 
 dependencies {
-    minecraft "com.mojang:minecraft:${minecraft_version}"
-    mappings "net.fabricmc:yarn:${minecraft_version}+build.10:v2"
-    modImplementation "net.fabricmc:fabric-loader:${fabric_loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_version}"
+    minecraft "com.mojang:minecraft:1.20.1"
+    mappings "net.fabricmc:yarn:1.20.1+build.10:v2"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:0.83.0+1.20.1"
+    modImplementation "net.fabricmc:fabric-loader:0.15.7"
 
     implementation "org.jetbrains:annotations:23.0.0"
     implementation group: 'com.google.code.findbugs', name: 'jsr305', version: '3.0.1'
-    implementation project(":Common")
+    api project(":Common")
 
     modApi("com.terraformersmc:modmenu:7.0.1") { exclude(module: "fabric-api") }
 
     // Use only the Fabric version of Collective
     modImplementation "com.natamus.collective-ml:collective-fabric:${minecraft_version}-${collective_version}"
-    // Remove any direct JAR reference to collective-1.20.1-7.91.jar for Fabric
-    modCompileOnly "com.natamus.collective-ml:collective:${minecraft_version}-${collective_version}"
+    // Use compileOnly instead of deprecated modCompileOnly
+    compileOnly "com.natamus.collective-ml:collective:${minecraft_version}-${collective_version}"
 }
 
 loom {
@@ -73,7 +71,7 @@ publishing {
     publications {
         mavenJava(MavenPublication) {
             groupId project.group
-            artifactId project.archivesBaseName
+            artifactId project.name
             version project.version
             from components.java
         }
@@ -85,3 +83,5 @@ publishing {
         }
     }
 }
+
+archivesBaseName = 'flowframe-fabric-1.20.1'

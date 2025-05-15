@@ -13,6 +13,10 @@
   "environment": "*",
   "entrypoints": { "main": [ "com.flowframe.FlowframeMod" ] },
 
+  "mixins": [
+    "flowframe.mixins.json"
+  ],
+
   "depends": {
     "fabricloader": ">=0.12.5",
     "fabric": "*",
