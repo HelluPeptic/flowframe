@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "flowframe",
+  "version": "1.0.0",
+
+  "name": "Flowframe",
+  "description": "All custom features for the FlowSMP Minecraft server. Modular and extensible.",
+  "authors": [ "HelluPeptic" ],
+
+  "license": "MIT",
+  "icon": "icon.png",
+
+  "environment": "*",
+  "entrypoints": { "main": [ "com.flowframe.FlowframeMod" ] },
+
+  "depends": {
+    "fabricloader": ">=0.12.5",
+    "fabric": "*",
+    "minecraft": ">=1.20",
+    "java": ">=17",
+    "collective": ">=7.91"
+  }
+}
