@@ -1,4 +1,4 @@
-package com.flowframe.features.keepinventory;
+package com.flowframe.mixin;
 
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.entity.damage.DamageSource;
@@ -6,6 +6,9 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import com.flowframe.features.keepinventory.KeepInventoryFeature;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
