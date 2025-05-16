@@ -6,6 +6,7 @@ import com.flowframe.features.oreannounce.OreAnnounceFeature;
 import com.flowframe.features.keepinventory.KeepInventoryFeature;
 import com.flowframe.features.creepernogrief.CreeperNoGriefFeature;
 import com.flowframe.features.tphere.TpHereCommand;
+import com.flowframe.features.croptrampling.NoCropTramplingFeature;
 
 public class FlowframeMod implements ModInitializer {
     @Override
@@ -16,5 +17,6 @@ public class FlowframeMod implements ModInitializer {
         KeepInventoryFeature.register(); 
         CreeperNoGriefFeature.register();
         TpHereCommand.register();
+        NoCropTramplingFeature.register();
     }
 }
