@@ -9,6 +9,8 @@ import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
+import net.minecraft.registry.Registries;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -93,7 +95,27 @@ public class OreAnnounceFeature {
 
     // Helper: is this block an ore?
     private static boolean isOre(BlockState state, Block block) {
-        return block == Blocks.DIAMOND_ORE || block == Blocks.DEEPSLATE_DIAMOND_ORE || block == Blocks.ANCIENT_DEBRIS;
+        // Vanilla ores
+        if (block == Blocks.DIAMOND_ORE || block == Blocks.DEEPSLATE_DIAMOND_ORE || block == Blocks.ANCIENT_DEBRIS) {
+            return true;
+        }
+        // Mythic Upgrades and Natures Spirit modded ores
+        Identifier id = Registries.BLOCK.getId(block);
+        if (id == null) return false;
+        String name = id.toString();
+        return name.equals("mythicupgrades:ametrine_ore")
+            || name.equals("mythicupgrades:aquamarine_ore")
+            || name.equals("mythicupgrades:deepslate_aquamarine_ore")
+            || name.equals("mythicupgrades:deepslate_peridot_ore")
+            || name.equals("mythicupgrades:deepslate_topaz_ore")
+            || name.equals("mythicupgrades:jade_ore")
+            || name.equals("mythicupgrades:necoium_ore")
+            || name.equals("mythicupgrades:peridot_ore")
+            || name.equals("mythicupgrades:raw_necoium_block")
+            || name.equals("mythicupgrades:ruby_ore")
+            || name.equals("mythicupgrades:sapphire_ore")
+            || name.equals("mythicupgrades:topaz_ore")
+            || name.equals("natures_spirit:chert_diamond_ore");
     }
 
     // Helper: blacklist (empty for now, add blocks if needed)
