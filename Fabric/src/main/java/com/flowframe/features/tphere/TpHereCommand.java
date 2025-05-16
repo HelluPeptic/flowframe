@@ -8,6 +8,7 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
+import me.lucko.fabric.api.permissions.v0.Permissions;
 
 public class TpHereCommand {
     public static void register() {
@@ -36,15 +37,11 @@ public class TpHereCommand {
 
     // LuckPerms/Fabric Permissions API check helper
     private static boolean hasLuckPermsPermission(ServerCommandSource source, String permission) {
-        // Try Fabric Permissions API if present
-        try {
-            Class<?> permApi = Class.forName("me.lucko.fabric.api.permissions.v0.Permissions");
-            Class<?> scsClass = Class.forName("net.minecraft.server.command.ServerCommandSource");
-            java.lang.reflect.Method check = permApi.getMethod("check", scsClass, String.class);
-            Object result = check.invoke(null, source, permission);
-            if (result instanceof Boolean) return (Boolean) result;
-        } catch (Exception ignored) {}
-        // Fallback: allow ops (permission level 2+)
-        return source.hasPermissionLevel(2);
+        // Allow if player has permission or is an operator (permission level 2+)
+        if (Permissions.check(source, permission) || source.hasPermissionLevel(2)) {
+            return true;
+        } else {
+            return false;
+        }
     }
 }
