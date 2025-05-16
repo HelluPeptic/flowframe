@@ -32,6 +32,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.time.Duration;
 import net.minecraft.text.ClickEvent;
+import me.lucko.fabric.api.permissions.v0.Permissions;
 
 public class OreAnnounceFeature {
     private static final HashMap<String, HashMap<String, Integer>> playerLastFoundTicks = new HashMap<>();
@@ -42,18 +43,26 @@ public class OreAnnounceFeature {
     public static void register() {
         PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, entity) -> {
             if (world.isClient) return;
-            onBlockBreak((ServerWorld) world, (ServerPlayerEntity) player, pos, state);
+            // Only announce if player has permission or is OP
+            if (hasLuckPermsPermission(player.getCommandSource(), "flowframe.feature.oreannouncements")) {
+                onBlockBreak((ServerWorld) world, (ServerPlayerEntity) player, pos, state);
+            }
         });
 
         // Register /orelog command for ops (v2 API, with optional time argument)
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("orelog")
-                .requires(source -> source.hasPermissionLevel(2))
+                .requires(source -> hasLuckPermsPermission(source, "flowframe.command.orelog"))
                 .then(CommandManager.argument("hours", StringArgumentType.word())
                     .executes(ctx -> executeOreLogCommand(ctx, StringArgumentType.getString(ctx, "hours"))))
                 .executes(ctx -> executeOreLogCommand(ctx, null))
             );
         });
+    }
+
+    // LuckPerms/Fabric Permissions API check helper
+    private static boolean hasLuckPermsPermission(ServerCommandSource source, String permission) {
+        return me.lucko.fabric.api.permissions.v0.Permissions.check(source, permission) || source.hasPermissionLevel(2);
     }
 
     private static int executeOreLogCommand(CommandContext<ServerCommandSource> context, String hoursArg) {
