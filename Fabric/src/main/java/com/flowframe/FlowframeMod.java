@@ -3,6 +3,7 @@ package com.flowframe;
 import net.fabricmc.api.ModInitializer;
 import com.flowframe.features.oreannounce.OreAnnounceFeature;
 import com.flowframe.features.keepinventory.KeepInventoryFeature;
+import com.flowframe.features.creepernogrief.CreeperNoGriefFeature;
 
 public class FlowframeMod implements ModInitializer {
     @Override
@@ -11,5 +12,6 @@ public class FlowframeMod implements ModInitializer {
         // Register features here:
         OreAnnounceFeature.register();
         KeepInventoryFeature.register(); 
+        CreeperNoGriefFeature.register();
     }
 }

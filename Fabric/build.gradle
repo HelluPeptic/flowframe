@@ -19,6 +19,7 @@ dependencies {
     // Add Sponge Mixin for annotation processing and compile
     implementation "org.spongepowered:mixin:0.8.5"
     annotationProcessor "org.spongepowered:mixin:0.8.5"
+    compileOnly "org.spongepowered:mixin:0.8.5"
 
     implementation "org.jetbrains:annotations:23.0.0"
     implementation group: 'com.google.code.findbugs', name: 'jsr305', version: '3.0.1'
