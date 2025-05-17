@@ -13,7 +13,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(FarmlandBlock.class)
 public abstract class MixinFarmlandBlock {
     @Inject(method = "onLandedUpon", cancellable = true, at = @At("HEAD"))
-    private void denyTrample(World world, BlockState state, BlockPos pos, Entity entity, float fallDistance, CallbackInfo ci) {
+    private void denyTrample(World world, BlockState state, BlockPos pos, Entity entity, float fallDistance,
+            CallbackInfo ci) {
         // Cancel the trampling entirely
         ci.cancel();
     }
