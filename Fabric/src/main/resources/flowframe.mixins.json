@@ -5,7 +5,8 @@
   "mixins": [
     "MixinServerPlayerEntity",
     "MixinExplosion",
-    "MixinFarmlandBlock"
+    "MixinFarmlandBlock",
+    "MixinItemFrameEntity"
   ],
   "injectors": {
     "defaultRequire": 1
