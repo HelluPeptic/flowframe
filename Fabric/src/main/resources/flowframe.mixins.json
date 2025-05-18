@@ -6,7 +6,11 @@
     "MixinServerPlayerEntity",
     "MixinExplosion",
     "MixinFarmlandBlock",
-    "MixinItemFrameEntity"
+    "MixinItemFrameEntity",
+    "MixinChatFormat",
+    "MixinCreeperEntity",
+    "MixinServerPlayNetworkHandler",
+    "MixinPlayerManager_JoinMessage"
   ],
   "injectors": {
     "defaultRequire": 1

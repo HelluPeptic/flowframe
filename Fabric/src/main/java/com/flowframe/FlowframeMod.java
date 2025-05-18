@@ -13,7 +13,12 @@ Flowframe Mod Features:
 - All major features are permission-based, allowing server admins to grant or revoke access to /tphere, /keepinv, /orelog, and ore broadcasts individually.
 */
 
+import com.flowframe.features.chatformat.ChatFormatFeature;
+
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
 
 import com.flowframe.features.oreannounce.OreAnnounceFeature;
 import com.flowframe.features.keepinventory.KeepInventoryFeature;
@@ -25,11 +30,13 @@ public class FlowframeMod implements ModInitializer {
     @Override
     public void onInitialize() {
         System.out.println("[FLOWFRAME] Initializing Flowframe mod");
-        // Register features here:
         OreAnnounceFeature.register();
         KeepInventoryFeature.register(); 
         CreeperNoGriefFeature.register();
         TpHereCommand.register();
         NoCropTramplingFeature.register();
+        ChatFormatFeature.register();
+
+        System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }
