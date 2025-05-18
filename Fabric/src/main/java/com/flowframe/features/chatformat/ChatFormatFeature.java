@@ -9,6 +9,8 @@ public class ChatFormatFeature {
     public static void register() {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
+            // Set tablist header/footer for the joining player
+            com.flowframe.features.chatformat.TablistUtil.updateTablistForPlayer(player, server);
             Text msg = Text.literal(player.getName().getString())
                 .styled(style -> style.withColor(TextColor.fromRgb(0x443e69)))
                 .append(Text.literal(" joined the server.").styled(style -> style.withColor(TextColor.fromRgb(0xAAAAAA))));
