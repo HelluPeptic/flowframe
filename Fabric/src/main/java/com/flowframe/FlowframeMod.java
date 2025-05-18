@@ -14,6 +14,7 @@ Flowframe Mod Features:
 */
 
 import com.flowframe.features.chatformat.ChatFormatFeature;
+import com.flowframe.features.chatformat.TablistSyncFeature;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
@@ -36,7 +37,7 @@ public class FlowframeMod implements ModInitializer {
         TpHereCommand.register();
         NoCropTramplingFeature.register();
         ChatFormatFeature.register();
-
+        TablistSyncFeature.register();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }
