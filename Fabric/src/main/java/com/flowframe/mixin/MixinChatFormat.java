@@ -1,5 +1,6 @@
 package com.flowframe.mixin;
 
+import com.flowframe.features.chatformat.GroupColorUtil;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
@@ -19,8 +20,9 @@ public abstract class MixinChatFormat {
         ServerPlayerEntity player = handler.player;
         MinecraftServer server = player.getServer();
         if (server != null) {
+            // Use group color for player name
             Text formatted = Text.literal(player.getName().getString())
-                .formatted(Formatting.WHITE)
+                .styled(style -> style.withColor(GroupColorUtil.getPlayerGroupTextColor(player)))
                 .append(Text.literal(" » ").formatted(Formatting.DARK_GRAY))
                 .append(Text.literal(packet.chatMessage()).formatted(Formatting.WHITE));
             for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {

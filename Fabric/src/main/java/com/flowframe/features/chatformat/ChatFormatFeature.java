@@ -5,9 +5,6 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.text.TextColor;
 
-// Supressing the default join/leave messages in MixinPlayerManager_JoinMessage.java and 
-// MixinServerPlayNetworkHandler.java
-
 public class ChatFormatFeature {
     public static void register() {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
