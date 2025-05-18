@@ -1,11 +1,17 @@
 package com.flowframe.features.chatformat;
 
+import net.luckperms.api.LuckPerms;
+import net.luckperms.api.LuckPermsProvider;
+import net.luckperms.api.model.user.User;
+import net.luckperms.api.cacheddata.CachedMetaData;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.network.packet.s2c.play.PlayerListHeaderS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
+import java.util.EnumSet;
+import java.util.Collections;
 
 public class TablistUtil {
     public static void updateTablistForAll(MinecraftServer server) {
@@ -15,20 +21,55 @@ public class TablistUtil {
     }
 
     public static void updateTablistForPlayer(ServerPlayerEntity player, MinecraftServer server) {
+        // Get LuckPerms prefix
+        String prefix = "";
+        try {
+            LuckPerms luckPerms = LuckPermsProvider.get();
+            User user = luckPerms.getUserManager().getUser(player.getUuid());
+            if (user != null) {
+                CachedMetaData meta = user.getCachedData().getMetaData();
+                String lpPrefix = meta.getPrefix();
+                if (lpPrefix != null) {
+                    prefix = lpPrefix.replace('&', '§');
+                }
+            }
+        } catch (Throwable ignored) {}
+        String displayName = prefix + player.getName().getString();
+        Text tablistName = Text.literal(displayName);
+
         Text header = Text.literal("")
             .append(Text.literal("FlowSMP").styled(style -> style.withColor(Formatting.AQUA).withBold(true)))
             .append(Text.literal("\n" + player.getName().getString()).styled(style -> style.withColor(Formatting.WHITE)))
             .append(Text.literal("\nOnline players: " + server.getCurrentPlayerCount()).styled(style -> style.withColor(Formatting.GRAY)))
-            .append(Text.literal("\n ")); // Add a blank line after header
+            .append(Text.literal("\n "));
         int ping = player.pingMilliseconds;
-        Text footer = Text.literal("\n ") // Add a blank line before footer
+        Text footer = Text.literal("\n ")
             .append(Text.literal("Ping: " + ping).styled(style -> style.withColor(Formatting.GOLD)));
         player.networkHandler.sendPacket(new PlayerListHeaderS2CPacket(header, footer));
-        player.networkHandler.sendPacket(
-            new PlayerListS2CPacket(
-                java.util.EnumSet.of(PlayerListS2CPacket.Action.UPDATE_DISPLAY_NAME),
-                java.util.Collections.singletonList(player)
-            )
-        );
+        // Tablist display name update is not possible here without a mixin. Header/footer will still update correctly.
+    }
+
+    // Returns the custom tablist name (with prefix) for a player
+    public static Text getTablistName(ServerPlayerEntity player) {
+        String prefix = "";
+        try {
+            LuckPerms luckPerms = LuckPermsProvider.get();
+            User user = luckPerms.getUserManager().getUser(player.getUuid());
+            if (user != null) {
+                CachedMetaData meta = user.getCachedData().getMetaData();
+                String lpPrefix = meta.getPrefix();
+                if (lpPrefix != null) {
+                    prefix = lpPrefix.replace('&', '§');
+                }
+            }
+        } catch (Throwable ignored) {}
+        String displayName = prefix + player.getName().getString();
+        return Text.literal(displayName);
+    }
+
+    public static void updateTablistDisplayNamesForAll(MinecraftServer server) {
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            server.getPlayerManager().sendToAll(new PlayerListS2CPacket(PlayerListS2CPacket.Action.UPDATE_DISPLAY_NAME, player));
+        }
     }
 }

@@ -10,7 +10,8 @@
     "MixinChatFormat",
     "MixinCreeperEntity",
     "MixinServerPlayNetworkHandler",
-    "MixinPlayerManager_JoinMessage"
+    "MixinPlayerManager_JoinMessage",
+    "MixinServerPlayerEntity_TablistName"
   ],
   "injectors": {
     "defaultRequire": 1
