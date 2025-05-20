@@ -55,7 +55,6 @@ public class OreAnnounceFeature {
                 .requires(source -> hasLuckPermsPermission(source, "flowframe.command.orelog"))
                 .then(CommandManager.argument("hours", StringArgumentType.word())
                     .executes(ctx -> executeOreLogCommand(ctx, StringArgumentType.getString(ctx, "hours"))))
-                .executes(ctx -> executeOreLogCommand(ctx, null))
             );
         });
     }
@@ -67,18 +66,20 @@ public class OreAnnounceFeature {
 
     private static int executeOreLogCommand(CommandContext<ServerCommandSource> context, String hoursArg) {
         ServerCommandSource source = context.getSource();
+        if (hoursArg == null) {
+            source.sendError(Text.literal("You must specify a time window in hours, e.g. /orelog 2h or /orelog 0.5h"));
+            return 1;
+        }
         Path logPath = getLogFilePath();
         long now = System.currentTimeMillis();
         long cutoffMillis = 0L;
-        if (hoursArg != null) {
-            try {
-                String h = hoursArg.toLowerCase().replace("h", "");
-                double hours = Double.parseDouble(h);
-                cutoffMillis = now - (long)(hours * 3600000);
-            } catch (Exception e) {
-                source.sendError(Text.literal("Invalid argument. Use e.g. /orelog 2h or /orelog 0.5h"));
-                return 1;
-            }
+        try {
+            String h = hoursArg.toLowerCase().replace("h", "");
+            double hours = Double.parseDouble(h);
+            cutoffMillis = now - (long)(hours * 3600000);
+        } catch (Exception e) {
+            source.sendError(Text.literal("Invalid argument. Use e.g. /orelog 2h or /orelog 0.5h"));
+            return 1;
         }
         try {
             if (!Files.exists(logPath)) {
