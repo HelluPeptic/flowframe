@@ -7,7 +7,6 @@
     "MixinExplosion",
     "MixinFarmlandBlock",
     "MixinItemFrameEntity",
-    "MixinChatFormat",
     "MixinCreeperEntity",
     "MixinServerPlayNetworkHandler",
     "MixinPlayerManager_JoinMessage",
