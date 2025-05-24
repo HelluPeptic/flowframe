@@ -17,6 +17,7 @@ dependencies {
     mappings "net.fabricmc:yarn:1.20.1+build.10:v2"
     modImplementation "net.fabricmc.fabric-api:fabric-api:0.83.0+1.20.1"
     modImplementation "net.fabricmc:fabric-loader:0.15.7"
+    modImplementation "net.fabricmc.fabric-api:fabric-message-api-v1:0.83.0+1.20.1"
 
     // Add Sponge Mixin for annotation processing and compile
     implementation "org.spongepowered:mixin:0.8.5"

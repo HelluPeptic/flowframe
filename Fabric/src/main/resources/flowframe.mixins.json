@@ -10,7 +10,8 @@
     "MixinCreeperEntity",
     "MixinServerPlayNetworkHandler",
     "MixinPlayerManager_JoinMessage",
-    "MixinServerPlayerEntity_TablistName"
+    "MixinServerPlayerEntity_TablistName",
+    "MixinServerWorld_NoPhantoms"
   ],
   "injectors": {
     "defaultRequire": 1

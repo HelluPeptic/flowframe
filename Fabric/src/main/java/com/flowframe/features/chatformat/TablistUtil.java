@@ -10,10 +10,13 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.network.packet.s2c.play.PlayerListHeaderS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import java.util.EnumSet;
 import java.util.Collections;
 
 public class TablistUtil {
+    private static int tablistUpdateTick = 0;
+
     public static void updateTablistForAll(MinecraftServer server) {
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             updateTablistForPlayer(player, server);
@@ -37,10 +40,13 @@ public class TablistUtil {
         String displayName = prefix + player.getName().getString();
         Text tablistName = Text.literal(displayName);
 
+        int online = server.getPlayerManager().getCurrentPlayerCount();
+        // Add +1 to include yourself in the count if not already included
+        // Vanilla getCurrentPlayerCount() does not include the player for whom the header is being set
         Text header = Text.literal("")
             .append(Text.literal("FlowSMP").styled(style -> style.withColor(Formatting.AQUA).withBold(true)))
             .append(Text.literal("\n" + player.getName().getString()).styled(style -> style.withColor(Formatting.WHITE)))
-            .append(Text.literal("\nOnline players: " + server.getCurrentPlayerCount()).styled(style -> style.withColor(Formatting.GRAY)))
+            .append(Text.literal("\nOnline players: " + online).styled(style -> style.withColor(Formatting.GRAY)))
             .append(Text.literal("\n "));
         int ping = player.pingMilliseconds;
         Text footer = Text.literal("\n ")
@@ -71,5 +77,16 @@ public class TablistUtil {
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             server.getPlayerManager().sendToAll(new PlayerListS2CPacket(PlayerListS2CPacket.Action.UPDATE_DISPLAY_NAME, player));
         }
+    }
+
+    public static void registerTablistAutoUpdate(MinecraftServer server) {
+        ServerTickEvents.END_SERVER_TICK.register(srv -> {
+            if (srv != server) return;
+            tablistUpdateTick++;
+            if (tablistUpdateTick >= 100) { // 5 seconds at 20 TPS
+                tablistUpdateTick = 0;
+                updateTablistForAll(server);
+            }
+        });
     }
 }

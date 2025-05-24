@@ -25,6 +25,7 @@ import com.flowframe.features.keepinventory.KeepInventoryFeature;
 import com.flowframe.features.creepernogrief.CreeperNoGriefFeature;
 import com.flowframe.features.tphere.TpHereCommand;
 import com.flowframe.features.croptrampling.NoCropTramplingFeature;
+import com.flowframe.features.phantomdeny.PhantomDenyFeature;
 
 public class FlowframeMod implements ModInitializer {
     @Override
@@ -36,6 +37,7 @@ public class FlowframeMod implements ModInitializer {
         TpHereCommand.register();
         NoCropTramplingFeature.register();
         ChatFormatFeature.register();
+        PhantomDenyFeature.register();
 
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }

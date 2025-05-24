@@ -42,7 +42,8 @@ public class OreAnnounceFeature {
 
     public static void register() {
         PlayerBlockBreakEvents.AFTER.register((world, player, pos, state, entity) -> {
-            if (world.isClient) return;
+            if (world.isClient)
+                return;
             // Only announce if player has permission or is OP
             if (hasLuckPermsPermission(player.getCommandSource(), "flowframe.feature.oreannouncements")) {
                 onBlockBreak((ServerWorld) world, (ServerPlayerEntity) player, pos, state);
@@ -52,10 +53,9 @@ public class OreAnnounceFeature {
         // Register /orelog command for ops (v2 API, with optional time argument)
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("orelog")
-                .requires(source -> hasLuckPermsPermission(source, "flowframe.command.orelog"))
-                .then(CommandManager.argument("hours", StringArgumentType.word())
-                    .executes(ctx -> executeOreLogCommand(ctx, StringArgumentType.getString(ctx, "hours"))))
-            );
+                    .requires(source -> hasLuckPermsPermission(source, "flowframe.command.orelog"))
+                    .then(CommandManager.argument("hours", StringArgumentType.word())
+                            .executes(ctx -> executeOreLogCommand(ctx, StringArgumentType.getString(ctx, "hours")))));
         });
     }
 
@@ -76,7 +76,7 @@ public class OreAnnounceFeature {
         try {
             String h = hoursArg.toLowerCase().replace("h", "");
             double hours = Double.parseDouble(h);
-            cutoffMillis = now - (long)(hours * 3600000);
+            cutoffMillis = now - (long) (hours * 3600000);
         } catch (Exception e) {
             source.sendError(Text.literal("Invalid argument. Use e.g. /orelog 2h or /orelog 0.5h"));
             return 1;
@@ -99,7 +99,8 @@ public class OreAnnounceFeature {
                         if (hoursArg == null || entryMillis >= cutoffMillis) {
                             filtered.add(line);
                         }
-                    } catch (Exception ignore) {}
+                    } catch (Exception ignore) {
+                    }
                 }
             }
             if (filtered.isEmpty()) {
@@ -130,22 +131,22 @@ public class OreAnnounceFeature {
                         // Compose colored message
                         String coordsStr = rest.substring(atPos + 4).trim();
                         MutableText text = Text.literal("")
-                            .append(Text.literal("[" + time + "] ").formatted(Formatting.GRAY))
-                            .append(Text.literal(name).formatted(Formatting.GOLD))
-                            .append(Text.literal(" mined ").formatted(Formatting.YELLOW))
-                            .append(Text.literal(count + " ").formatted(Formatting.YELLOW))
-                            .append(Text.literal(ore).formatted(Formatting.AQUA))
-                            .append(Text.literal(" at ").formatted(Formatting.YELLOW))
-                            .append(Text.literal(coordsStr).formatted(Formatting.YELLOW));
+                                .append(Text.literal("[" + time + "] ").formatted(Formatting.GRAY))
+                                .append(Text.literal(name).formatted(Formatting.GOLD))
+                                .append(Text.literal(" mined ").formatted(Formatting.YELLOW))
+                                .append(Text.literal(count + " ").formatted(Formatting.YELLOW))
+                                .append(Text.literal(ore).formatted(Formatting.AQUA))
+                                .append(Text.literal(" at ").formatted(Formatting.YELLOW))
+                                .append(Text.literal(coordsStr).formatted(Formatting.YELLOW));
                         // Teleport click event
                         String[] xyz = coordsStr.split(",");
                         if (xyz.length == 3) {
                             coords = xyz[0].trim() + " " + xyz[1].trim() + " " + xyz[2].trim();
                             final String coordsFinal = coords;
                             final MutableText finalText = text.styled(style -> style
-                                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tp @s " + coordsFinal))
-                                .withColor(Formatting.AQUA)
-                            );
+                                    .withClickEvent(
+                                            new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tp @s " + coordsFinal))
+                                    .withColor(Formatting.AQUA));
                             source.sendFeedback(() -> finalText, false);
                         } else {
                             source.sendFeedback(() -> text, false);
@@ -156,10 +157,9 @@ public class OreAnnounceFeature {
                     if (coords != null) {
                         final String tpCommand = "/tp @s " + coords;
                         final MutableText fallbackText = Text.literal(line)
-                            .styled(style -> style
-                                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, tpCommand))
-                                .withColor(Formatting.AQUA)
-                            );
+                                .styled(style -> style
+                                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, tpCommand))
+                                        .withColor(Formatting.AQUA));
                         source.sendFeedback(() -> fallbackText, false);
                     } else {
                         final MutableText fallbackText = Text.literal(line);
@@ -175,15 +175,18 @@ public class OreAnnounceFeature {
 
     private static Path getLogFilePath() {
         String userDir = System.getProperty("user.dir");
-        return Path.of(userDir, LOG_FILE);
+        // Place orelog.txt in the config folder
+        return Path.of(userDir, "config", LOG_FILE);
     }
 
     private static void logOreBreak(String playerName, String oreName, BlockPos pos, int count) {
         Path logPath = getLogFilePath();
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-        String entry = String.format("[%s] %s mined %d %s at %s,%s,%s", timestamp, playerName, count, oreName, pos.getX(), pos.getY(), pos.getZ());
+        String entry = String.format("[%s] %s mined %d %s at %s,%s,%s", timestamp, playerName, count, oreName,
+                pos.getX(), pos.getY(), pos.getZ());
         try {
-            Files.writeString(logPath, entry + System.lineSeparator(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            Files.writeString(logPath, entry + System.lineSeparator(), StandardOpenOption.CREATE,
+                    StandardOpenOption.APPEND);
         } catch (IOException e) {
             System.err.println("[OreAnnounce] Failed to write ore log: " + e.getMessage());
         }
@@ -194,15 +197,18 @@ public class OreAnnounceFeature {
         // if (!world.getServer().isDedicated()) return;
 
         // Ignore creative players (optional, set to true if you want)
-        if (player.isCreative()) return;
+        if (player.isCreative())
+            return;
 
         // Only allow pickaxes (optional, always true here)
         // ItemStack handStack = player.getMainHandStack();
         // if (!isPickaxe(handStack)) return;
 
         Block block = state.getBlock();
-        if (!isOre(state, block)) return;
-        if (blockBlacklist().contains(block)) return;
+        if (!isOre(state, block))
+            return;
+        if (blockBlacklist().contains(block))
+            return;
 
         int playerTickCount = (int) player.age; // .age is in ticks
         String playerName = player.getName().getString();
@@ -233,11 +239,11 @@ public class OreAnnounceFeature {
 
             // Build the message with count and correct formatting
             Text message = Text.literal(playerName)
-                .formatted(Formatting.GOLD)
-                .append(Text.literal(" found ").formatted(Formatting.YELLOW))
-                .append(Text.literal(oreCount + " ").formatted(Formatting.YELLOW))
-                .append(Text.literal(oreName).formatted(Formatting.AQUA))
-                .append(Text.literal("!").formatted(Formatting.YELLOW));
+                    .formatted(Formatting.GOLD)
+                    .append(Text.literal(" found ").formatted(Formatting.YELLOW))
+                    .append(Text.literal(oreCount + " ").formatted(Formatting.YELLOW))
+                    .append(Text.literal(oreName).formatted(Formatting.AQUA))
+                    .append(Text.literal("!").formatted(Formatting.YELLOW));
 
             for (ServerPlayerEntity op : world.getServer().getPlayerManager().getPlayerList()) {
                 if (op.hasPermissionLevel(2)) {
@@ -253,27 +259,26 @@ public class OreAnnounceFeature {
 
     // Helper: is this block an ore?
     private static boolean isOre(BlockState state, Block block) {
-        // Vanilla ores
-        if (block == Blocks.DIAMOND_ORE || block == Blocks.DEEPSLATE_DIAMOND_ORE || block == Blocks.ANCIENT_DEBRIS) {
-            return true;
-        }
-        // Mythic Upgrades and Natures Spirit modded ores
         Identifier id = Registries.BLOCK.getId(block);
-        if (id == null) return false;
+        if (id == null)
+            return false;
         String name = id.toString();
-        return name.equals("mythicupgrades:ametrine_ore")
-            || name.equals("mythicupgrades:aquamarine_ore")
-            || name.equals("mythicupgrades:deepslate_aquamarine_ore")
-            || name.equals("mythicupgrades:deepslate_peridot_ore")
-            || name.equals("mythicupgrades:deepslate_topaz_ore")
-            || name.equals("mythicupgrades:jade_ore")
-            || name.equals("mythicupgrades:necoium_ore")
-            || name.equals("mythicupgrades:peridot_ore")
-            || name.equals("mythicupgrades:raw_necoium_block")
-            || name.equals("mythicupgrades:ruby_ore")
-            || name.equals("mythicupgrades:sapphire_ore")
-            || name.equals("mythicupgrades:topaz_ore")
-            || name.equals("natures_spirit:chert_diamond_ore");
+        // Explicit list: vanilla diamonds, Mythic Upgrades, Natures Spirit
+        return name.equals("minecraft:diamond_ore")
+                || name.equals("minecraft:deepslate_diamond_ore")
+                || name.equals("mythicupgrades:ametrine_ore")
+                || name.equals("mythicupgrades:aquamarine_ore")
+                || name.equals("mythicupgrades:deepslate_aquamarine_ore")
+                || name.equals("mythicupgrades:deepslate_peridot_ore")
+                || name.equals("mythicupgrades:deepslate_topaz_ore")
+                || name.equals("mythicupgrades:jade_ore")
+                || name.equals("mythicupgrades:necoium_ore")
+                || name.equals("mythicupgrades:peridot_ore")
+                || name.equals("mythicupgrades:raw_necoium_block")
+                || name.equals("mythicupgrades:ruby_ore")
+                || name.equals("mythicupgrades:sapphire_ore")
+                || name.equals("mythicupgrades:topaz_ore")
+                || name.equals("natures_spirit:chert_diamond_ore");
     }
 
     // Helper: blacklist (empty for now, add blocks if needed)
@@ -283,15 +288,17 @@ public class OreAnnounceFeature {
 
     // Helper: count connected ores (6-directional)
     private static int countConnectedOres(ServerWorld world, BlockPos pos, Block targetBlock, Set<BlockPos> visited) {
-        if (visited.contains(pos)) return 0;
+        if (visited.contains(pos))
+            return 0;
         visited.add(pos);
 
         // Treat the starting position as ore even if already broken
         boolean isOre = world.getBlockState(pos).getBlock() == targetBlock || visited.size() == 1;
-        if (!isOre) return 0;
+        if (!isOre)
+            return 0;
 
         int count = 1;
-        for (BlockPos offset : new BlockPos[]{
+        for (BlockPos offset : new BlockPos[] {
                 pos.north(), pos.south(), pos.east(), pos.west(), pos.up(), pos.down()
         }) {
             if (!visited.contains(offset)) {
