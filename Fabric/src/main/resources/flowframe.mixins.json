@@ -6,7 +6,6 @@
     "MixinServerPlayerEntity",
     "MixinExplosion",
     "MixinFarmlandBlock",
-    "MixinItemFrameEntity",
     "MixinCreeperEntity",
     "MixinServerPlayNetworkHandler",
     "MixinPlayerManager_JoinMessage",
