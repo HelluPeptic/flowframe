@@ -278,6 +278,8 @@ public class OreAnnounceFeature {
                 || name.equals("mythicupgrades:ruby_ore")
                 || name.equals("mythicupgrades:sapphire_ore")
                 || name.equals("mythicupgrades:topaz_ore")
+                || name.equals("jewelry:deepslate_gem_vein")
+                || name.equals("jewelry:gem_vein")
                 || name.equals("natures_spirit:chert_diamond_ore");
     }
 
