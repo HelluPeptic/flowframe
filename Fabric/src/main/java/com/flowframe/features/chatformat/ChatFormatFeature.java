@@ -16,7 +16,18 @@ public class ChatFormatFeature {
             "playernames.txt");
     private static final Set<String> savedPlayerNames = new HashSet<>();
 
+    private static void loadPlayerNames() {
+        try {
+            if (Files.exists(PLAYERNAMES_PATH)) {
+                Files.readAllLines(PLAYERNAMES_PATH, StandardCharsets.UTF_8)
+                    .forEach(savedPlayerNames::add);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
     public static void register() {
+        loadPlayerNames();
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
             String playerName = player.getName().getString();
