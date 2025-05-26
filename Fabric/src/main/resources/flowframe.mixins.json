@@ -10,7 +10,8 @@
     "MixinServerPlayNetworkHandler",
     "MixinPlayerManager_JoinMessage",
     "MixinServerPlayerEntity_TablistName",
-    "MixinServerWorld_NoPhantoms"
+    "MixinServerWorld_NoPhantoms",
+    "MixinComposterBlock"
   ],
   "injectors": {
     "defaultRequire": 1
