@@ -20,6 +20,7 @@ public abstract class MixinComposterBlock {
         ItemStack stack = player.getStackInHand(hand);
         if (stack.isEmpty()) {
             cir.setReturnValue(ActionResult.FAIL);
+            cir.cancel(); // Ensure no further processing occurs
         }
     }
 }
