@@ -12,7 +12,8 @@
     "MixinServerPlayerEntity_TablistName",
     "MixinServerWorld_NoPhantoms",
     "MixinComposterBlock",
-    "MixinEndPortalBlock"
+    "MixinEndPortalBlock",
+    "MixinMinecartSpeed"
   ],
   "injectors": {
     "defaultRequire": 1
