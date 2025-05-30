@@ -47,7 +47,7 @@ public class ChatFormatFeature {
                 msg = Text.literal(playerName)
                         .styled(style -> style.withColor(TextColor.fromRgb(0x443e69)))
                         .append(Text.literal(" joined for the first time")
-                                .styled(style -> style.withColor(TextColor.fromRgb(0xAAAAAA))));
+                                .styled(style -> style.withColor(TextColor.fromRgb(0xFFAA00))));
             } else {
                 msg = Text.literal(playerName)
                         .styled(style -> style.withColor(TextColor.fromRgb(0x443e69)))

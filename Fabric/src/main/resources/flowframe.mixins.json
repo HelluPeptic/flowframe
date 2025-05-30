@@ -11,7 +11,8 @@
     "MixinPlayerManager_JoinMessage",
     "MixinServerPlayerEntity_TablistName",
     "MixinServerWorld_NoPhantoms",
-    "MixinComposterBlock"
+    "MixinComposterBlock",
+    "MixinEndPortalBlock"
   ],
   "injectors": {
     "defaultRequire": 1
