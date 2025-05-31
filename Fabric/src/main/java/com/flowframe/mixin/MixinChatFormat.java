@@ -24,9 +24,19 @@ public abstract class MixinChatFormat {
                 .styled(style -> style.withColor(com.flowframe.features.chatformat.GroupColorUtil.getPlayerGroupTextColor(player)))
                 .append(net.minecraft.text.Text.literal(" » ").formatted(net.minecraft.util.Formatting.DARK_GRAY))
                 .append(net.minecraft.text.Text.literal(packet.chatMessage()).formatted(net.minecraft.util.Formatting.WHITE));
-            for (net.minecraft.server.network.ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
+            for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
                 p.sendMessage(formatted, false);
             }
+            // Relay to Discord Integration if available
+            try {
+                Class<?> clazz = Class.forName("de.erdbeerbaerlp.dcintegration.architectury.DiscordIntegrationMod");
+                for (java.lang.reflect.Method m : clazz.getDeclaredMethods()) {
+                    if (m.getName().equals("onFlowframeChat") && m.getParameterCount() == 2) {
+                        m.invoke(null, player, packet.chatMessage());
+                        break;
+                    }
+                }
+            } catch (Throwable ignored) {}
             // Update tablist for all players after chat (demonstration)
             com.flowframe.features.chatformat.TablistUtil.updateTablistForAll(server);
             ci.cancel();
