@@ -13,7 +13,6 @@
     "MixinServerWorld_NoPhantoms",
     "MixinComposterBlock",
     "MixinEndPortalBlock",
-    "MixinMinecartSpeed",
     "MixinChatFormat"
   ],
   "injectors": {
