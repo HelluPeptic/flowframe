@@ -68,6 +68,8 @@ loom {
     }
 }
 
+version = rootProject.version
+
 processResources {
     from(sourceSets.main.resources) // Ensure Fabric's own resources (including fabric.mod.json) are included
     from project(":Common").sourceSets.main.resources
@@ -84,6 +86,12 @@ jar {
     }
     // Include Common's compiled classes in the Fabric JAR
     from(project(":Common").sourceSets.main.output)
+    // Add Implementation-Version to manifest for dynamic version command
+    manifest {
+        attributes(
+            'Implementation-Version': project.version
+        )
+    }
     // Do not override defaults; compiled classes and resources are included by default
 }
 
@@ -105,3 +113,5 @@ publishing {
 }
 
 archivesBaseName = 'flowframe-fabric-1.20.1'
+
+

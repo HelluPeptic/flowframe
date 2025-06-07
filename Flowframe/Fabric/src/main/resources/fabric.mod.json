@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "id": "flowframe",
-  "version": "1.0.0",
+  "version": "${version}",
 
   "name": "Flowframe",
-  "description": "All custom features for the FlowSMP Minecraft server. Modular and extensible.",
+  "description": "All custom features for the FlowSMP Minecraft server.",
   "authors": [ "HelluPeptic" ],
 
   "license": "MIT",

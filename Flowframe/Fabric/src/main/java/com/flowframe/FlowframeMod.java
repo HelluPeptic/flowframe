@@ -27,6 +27,7 @@ import com.flowframe.features.tphere.TpHereCommand;
 import com.flowframe.features.croptrampling.NoCropTramplingFeature;
 import com.flowframe.features.phantomdeny.PhantomDenyFeature;
 import com.flowframe.features.endtoggle.EndToggleFeature;
+import com.flowframe.features.version.VersionCommand;
 
 public class FlowframeMod implements ModInitializer {
     @Override
@@ -40,6 +41,7 @@ public class FlowframeMod implements ModInitializer {
         ChatFormatFeature.register();
         PhantomDenyFeature.register();
         EndToggleFeature.register();
+        VersionCommand.register();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }
