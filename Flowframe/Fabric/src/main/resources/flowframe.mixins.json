@@ -13,7 +13,8 @@
     "MixinServerWorld_NoPhantoms",
     "MixinComposterBlock",
     "MixinEndPortalBlock",
-    "MixinChatFormat"
+    "MixinChatFormat",
+    "MixinServerWorld_NoNiftyCartsPlow"
   ],
   "injectors": {
     "defaultRequire": 1
