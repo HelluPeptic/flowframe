@@ -60,7 +60,7 @@ Flowframe is a modular Minecraft mod for Fabric that adds quality-of-life and se
 
 ### 9. Phantom Deny
 
-- **Description:** Disables phantom spawning entirely.
+- **Description:** Disables phantom spawning in the overworld. However, they are allowed in the nether for obtainable phantom membrane.
 - **Commands:** None
 - **Permissions:** None (automatic)
 
@@ -72,6 +72,18 @@ Flowframe is a modular Minecraft mod for Fabric that adds quality-of-life and se
 - **Commands:** None
 - **Permissions:**
   - Tablist and chat formatting: automatic, but LuckPerms prefixes and group color permissions are respected (e.g., `flowframe.groupcolor.&a` for green).
+
+### 11. Plow Deny
+
+- **Description:** Prevents the Nifty Carts plow entity from being placed due to a bug causing server crashes.
+- **Commands:** None
+- **Permissions:** None (automatic)
+
+### 12. `/flowframe version` Command
+
+- **Description:** Displays the current version of the Flowframe mod.
+- **Command:** `/flowframe version`
+- **Permissions:** `flowframe.command.version` (or operator level 2+)
 
 ---
 
