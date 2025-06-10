@@ -28,6 +28,7 @@ import com.flowframe.features.croptrampling.NoCropTramplingFeature;
 import com.flowframe.features.phantomdeny.PhantomDenyFeature;
 import com.flowframe.features.endtoggle.EndToggleFeature;
 import com.flowframe.features.version.VersionCommand;
+import com.flowframe.features.gl.GlAliasCommands;
 
 public class FlowframeMod implements ModInitializer {
     @Override
@@ -42,6 +43,7 @@ public class FlowframeMod implements ModInitializer {
         PhantomDenyFeature.register();
         EndToggleFeature.register();
         VersionCommand.register();
+        GlAliasCommands.register();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }
