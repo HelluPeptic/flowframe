@@ -29,6 +29,7 @@ import com.flowframe.features.phantomdeny.PhantomDenyFeature;
 import com.flowframe.features.endtoggle.EndToggleFeature;
 import com.flowframe.features.version.VersionCommand;
 import com.flowframe.features.gl.GlAliasCommands;
+import com.flowframe.features.togglepvp.TogglePvpFeature;
 
 public class FlowframeMod implements ModInitializer {
     @Override
@@ -44,6 +45,7 @@ public class FlowframeMod implements ModInitializer {
         EndToggleFeature.register();
         VersionCommand.register();
         GlAliasCommands.register();
+        TogglePvpFeature.register();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }
