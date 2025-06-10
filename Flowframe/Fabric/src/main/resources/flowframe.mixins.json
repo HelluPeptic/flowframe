@@ -14,7 +14,8 @@
     "MixinComposterBlock",
     "MixinEndPortalBlock",
     "MixinChatFormat",
-    "MixinServerWorld_NoNiftyCartsPlow"
+    "MixinServerWorld_NoNiftyCartsPlow",
+    "MixinLivingEntity_PvpToggle"
   ],
   "injectors": {
     "defaultRequire": 1
