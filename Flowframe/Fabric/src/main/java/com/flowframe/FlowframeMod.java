@@ -30,6 +30,7 @@ import com.flowframe.features.endtoggle.EndToggleFeature;
 import com.flowframe.features.version.VersionCommand;
 import com.flowframe.features.gl.GlAliasCommands;
 import com.flowframe.features.togglepvp.TogglePvpFeature;
+import com.flowframe.features.obtaincard.ObtainCardFeature;
 
 public class FlowframeMod implements ModInitializer {
     @Override
@@ -46,6 +47,7 @@ public class FlowframeMod implements ModInitializer {
         VersionCommand.register();
         GlAliasCommands.register();
         TogglePvpFeature.register();
+        ObtainCardFeature.register();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }
