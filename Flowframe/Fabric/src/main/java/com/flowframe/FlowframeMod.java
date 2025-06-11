@@ -31,6 +31,8 @@ import com.flowframe.features.version.VersionCommand;
 import com.flowframe.features.gl.GlAliasCommands;
 import com.flowframe.features.togglepvp.TogglePvpFeature;
 import com.flowframe.features.obtaincard.ObtainCardFeature;
+import com.flowframe.features.linked.LinkedCommandFeature;
+import com.flowframe.features.levitate.LevitateCommandFeature;
 
 public class FlowframeMod implements ModInitializer {
     @Override
@@ -48,6 +50,8 @@ public class FlowframeMod implements ModInitializer {
         GlAliasCommands.register();
         TogglePvpFeature.register();
         ObtainCardFeature.register();
+        LinkedCommandFeature.register();
+        LevitateCommandFeature.register();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }
