@@ -28,8 +28,14 @@ public abstract class AircraftEntity extends EngineVehicle {
         return TRAILS;
     }
 
+    // --- GLOBAL PILOT LIMIT ---
+    // (All pilot limit logic is now handled in VehicleEntity)
+
     @Override
     public void tick() {
+        super.tick();
+        Level world = this.level();
+
         // rolling interpolation
         prevRoll = roll;
         if (onGround()) {

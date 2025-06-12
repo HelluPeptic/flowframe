@@ -1,6 +1,9 @@
 package immersive_aircraft;
 
+import com.mojang.brigadier.CommandDispatcher;
+import immersive_aircraft.command.SetAircraftPilotLimitCommand;
 import immersive_aircraft.network.NetworkManager;
+import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
 import org.apache.logging.log4j.LogManager;
@@ -24,6 +27,10 @@ public final class Main {
 
     public static ResourceLocation locate(String path) {
         return new ResourceLocation(MOD_ID, path);
+    }
+
+    public static void registerCommands(CommandDispatcher<CommandSourceStack> dispatcher) {
+        SetAircraftPilotLimitCommand.register(dispatcher);
     }
 
     public interface CameraGetter {

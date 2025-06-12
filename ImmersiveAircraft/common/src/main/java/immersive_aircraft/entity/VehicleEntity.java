@@ -358,8 +358,122 @@ public abstract class VehicleEntity extends Entity {
         return false;
     }
 
+    // --- GLOBAL PILOT LIMIT ---
+    private static int AIRCRAFT_PILOT_LIMIT = 1; // Now mutable
+    protected static final java.util.Set<java.util.UUID> AIRCRAFT_PILOTS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    public static void setAircraftPilotLimit(int limit) {
+        AIRCRAFT_PILOT_LIMIT = limit;
+    }
+    public static int getAircraftPilotLimit() {
+        return AIRCRAFT_PILOT_LIMIT;
+    }
+
+    @Override
+    public InteractionResult interact(@NotNull Player player, @NotNull InteractionHand hand) {
+        Level world = this.level();
+        // --- REPAIR LOGIC ---
+        if (getHealth() < 1.0f && (player.isShiftKeyDown() || !Config.getInstance().requireShiftForRepair) && !hasPassenger(player)) {
+            if (!world.isClientSide) {
+                player.causeFoodExhaustion(Config.getInstance().repairExhaustion);
+                repair(Config.getInstance().repairSpeed);
+                MutableComponent component = Component.translatable("immersive_aircraft.repair", (int) (getHealth() * 100.0f));
+                if (getHealth() < 0.33) {
+                    component.withStyle(ChatFormatting.RED);
+                } else if (getHealth() < 0.66) {
+                    component.withStyle(ChatFormatting.GOLD);
+                } else {
+                    component.withStyle(ChatFormatting.GREEN);
+                }
+                player.displayClientMessage(component, true);
+                world.playSound(null, getX(), getY(), getZ(), Sounds.REPAIR.get(), SoundSource.NEUTRAL, 1.0f, 0.7f + random.nextFloat() * 0.2f);
+            } else {
+                // Repair particles
+                for (AABB shape : getAdditionalShapes()) {
+                    for (int i = 0; i < 5; i++) {
+                        Vec3 center = shape.getCenter();
+                        double x = center.x + shape.getXsize() * (random.nextDouble() - 0.5) * 1.5;
+                        double y = center.y + shape.getYsize() * (random.nextDouble() - 0.5) * 1.5;
+                        double z = center.z + shape.getZsize() * (random.nextDouble() - 0.5) * 1.5;
+                        world.addParticle(ParticleTypes.COMPOSTER, x, y, z, 0, random.nextDouble(), 0);
+                    }
+                }
+            }
+            return InteractionResult.CONSUME;
+        }
+        // --- PILOT LIMIT LOGIC ---
+        if (world != null && !world.isClientSide) {
+            AIRCRAFT_PILOTS.removeIf(uuid -> world.getPlayerByUUID(uuid) == null);
+            if (!this.hasPassenger(player) && AIRCRAFT_PILOTS.size() >= AIRCRAFT_PILOT_LIMIT) {
+                player.displayClientMessage(Component.literal("Aircraft pilot limit reached! Please wait for a slot to open."), true);
+                return InteractionResult.FAIL;
+            }
+            if (!this.hasPassenger(player)) {
+                AIRCRAFT_PILOTS.add(player.getUUID());
+            }
+        }
+        if (!isValidDimension()) {
+            player.displayClientMessage(Component.translatable("immersive_aircraft.invalid_dimension"), true);
+            return InteractionResult.FAIL;
+        }
+        if (player.isSecondaryUseActive()) {
+            return InteractionResult.PASS;
+        }
+        if (!world.isClientSide) {
+            return player.startRiding(this) ? InteractionResult.CONSUME : InteractionResult.PASS;
+        }
+        if (hasPassenger(player)) {
+            return InteractionResult.PASS;
+        }
+        return InteractionResult.SUCCESS;
+    }
+
+    @Override
+    public void removePassenger(Entity passenger) {
+        super.removePassenger(passenger);
+        Level world = this.level();
+        if (world != null && !world.isClientSide && passenger instanceof Player) {
+            Player player = (Player) passenger;
+            // Only remove from AIRCRAFT_PILOTS if the player is not riding any other aircraft
+            boolean stillRidingAircraft = player.getVehicle() instanceof VehicleEntity;
+            if (!stillRidingAircraft) {
+                AIRCRAFT_PILOTS.remove(player.getUUID());
+            }
+        }
+    }
+
+    // Helper to ensure only one aircraft prints the info (lowest entityId)
+    protected int getLowestAircraftId() {
+        int minId = this.getId();
+        Level world = this.level();
+        if (world != null) {
+            AABB bounds = world.getWorldBorder().getCollisionShape().bounds();
+            for (Entity entity : world.getEntitiesOfClass(VehicleEntity.class, bounds)) {
+                int eid = entity.getId();
+                if (eid < minId) {
+                    minId = eid;
+                }
+            }
+        }
+        return minId;
+    }
+
     @Override
     public void tick() {
+        super.tick();
+        Level world = this.level();
+        // Print aircraft pilot info every 200 ticks (10 seconds), only from the aircraft with the lowest entityId
+        if (world != null && !world.isClientSide && this.tickCount % 200 == 0 && this.getId() == getLowestAircraftId()) {
+            java.util.List<String> names = new java.util.ArrayList<>();
+            for (java.util.UUID uuid : AIRCRAFT_PILOTS) {
+                Player p = world.getPlayerByUUID(uuid);
+                if (p != null) {
+                    names.add(p.getName().getString());
+                }
+            }
+            System.out.println("[ImmersiveAircraft] Aircraft pilots: " + names.size() + (names.isEmpty() ? "" : " [" + String.join(", ", names) + "]"));
+        }
+
         if (tickCount % 10 == 0) {
             secondLastX = lastX;
             secondLastY = lastY;
@@ -681,56 +795,6 @@ public abstract class VehicleEntity extends Entity {
     @Override
     public boolean isNoGravity() {
         return true;
-    }
-
-    @Override
-    public InteractionResult interact(@NotNull Player player, @NotNull InteractionHand hand) {
-        if (getHealth() < 1.0f && (player.isShiftKeyDown() || !Config.getInstance().requireShiftForRepair) && !hasPassenger(player)) {
-            if (!level().isClientSide) {
-                player.causeFoodExhaustion(Config.getInstance().repairExhaustion);
-                repair(Config.getInstance().repairSpeed);
-
-                // Repair message
-                MutableComponent component = Component.translatable("immersive_aircraft.repair", (int) (getHealth() * 100.0f));
-                if (getHealth() < 0.33) {
-                    component.withStyle(ChatFormatting.RED);
-                } else if (getHealth() < 0.66) {
-                    component.withStyle(ChatFormatting.GOLD);
-                } else {
-                    component.withStyle(ChatFormatting.GREEN);
-                }
-                player.displayClientMessage(component, true);
-
-                level().playSound(null, getX(), getY(), getZ(), Sounds.REPAIR.get(), SoundSource.NEUTRAL, 1.0f, 0.7f + random.nextFloat() * 0.2f);
-            } else {
-                // Repair particles
-                for (AABB shape : getAdditionalShapes()) {
-                    for (int i = 0; i < 5; i++) {
-                        Vec3 center = shape.getCenter();
-                        double x = center.x + shape.getXsize() * (random.nextDouble() - 0.5) * 1.5;
-                        double y = center.y + shape.getYsize() * (random.nextDouble() - 0.5) * 1.5;
-                        double z = center.z + shape.getZsize() * (random.nextDouble() - 0.5) * 1.5;
-                        level().addParticle(ParticleTypes.COMPOSTER, x, y, z, 0, random.nextDouble(), 0);
-                    }
-                }
-            }
-
-            return InteractionResult.CONSUME;
-        }
-        if (!isValidDimension()) {
-            player.displayClientMessage(Component.translatable("immersive_aircraft.invalid_dimension"), true);
-            return InteractionResult.FAIL;
-        }
-        if (player.isSecondaryUseActive()) {
-            return InteractionResult.PASS;
-        }
-        if (!level().isClientSide) {
-            return player.startRiding(this) ? InteractionResult.CONSUME : InteractionResult.PASS;
-        }
-        if (hasPassenger(player)) {
-            return InteractionResult.PASS;
-        }
-        return InteractionResult.SUCCESS;
     }
 
     @Override

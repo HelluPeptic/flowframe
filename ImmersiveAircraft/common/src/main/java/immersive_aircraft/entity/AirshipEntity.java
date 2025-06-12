@@ -6,14 +6,20 @@ import immersive_aircraft.Sounds;
 import immersive_aircraft.entity.misc.Trail;
 import immersive_aircraft.item.upgrade.VehicleStat;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvent;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.AABB;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
 
@@ -27,6 +33,7 @@ public class AirshipEntity extends Rotorcraft {
         return 50.0f;
     }
 
+    @Override
     protected SoundEvent getEngineSound() {
         return Sounds.PROPELLER_SMALL.get();
     }
@@ -38,6 +45,7 @@ public class AirshipEntity extends Rotorcraft {
 
     private final List<Trail> trails = List.of(new Trail(15, 0.5f));
 
+    @Override
     public List<Trail> getTrails() {
         return trails;
     }
@@ -72,13 +80,16 @@ public class AirshipEntity extends Rotorcraft {
         }
 
         // up and down
-        setDeltaMovement(getDeltaMovement().add(0.0f, getEnginePower() * getProperties().get(VehicleStat.VERTICAL_SPEED) * pressingInterpolatedY.getSmooth(), 0.0f));
+        setDeltaMovement(getDeltaMovement().add(0.0f,
+                getEnginePower() * getProperties().get(VehicleStat.VERTICAL_SPEED) * pressingInterpolatedY.getSmooth(),
+                0.0f));
 
         // get pointing direction
         Vector3f direction = getForwardDirection();
 
         // accelerate
-        float thrust = (float) (Math.pow(getEnginePower(), 5.0) * getProperties().get(VehicleStat.ENGINE_SPEED)) * pressingInterpolatedZ.getSmooth();
+        float thrust = (float) (Math.pow(getEnginePower(), 5.0) * getProperties().get(VehicleStat.ENGINE_SPEED))
+                * pressingInterpolatedZ.getSmooth();
         Vector3f f = direction.mul(thrust);
         setDeltaMovement(getDeltaMovement().add(f.x, f.y, f.z));
     }
@@ -86,10 +97,11 @@ public class AirshipEntity extends Rotorcraft {
     @Override
     public void tick() {
         super.tick();
-
+        Level world = this.level();
+        // Print aircraft pilot info every 200 ticks (10 seconds), only from the aircraft with the lowest entityId
+        // (Handled globally in VehicleEntity now)
         float power = getEnginePower();
-
-        if (level().isClientSide) {
+        if (level() != null && level().isClientSide) {
             if (isWithinParticleRange() && power > 0.01) {
                 Matrix4f transform = getVehicleTransform();
 
@@ -106,6 +118,23 @@ public class AirshipEntity extends Rotorcraft {
                 trails.get(0).add(ZERO_VEC4, ZERO_VEC4, 0.0f);
             }
         }
+    }
+
+    // Helper to ensure only one aircraft prints the info (lowest entityId)
+    @Override
+    protected int getLowestAircraftId() {
+        int minId = this.getId();
+        Level world = this.level();
+        if (world != null) {
+            AABB bounds = world.getWorldBorder().getCollisionShape().bounds();
+            for (AircraftEntity entity : world.getEntitiesOfClass(AircraftEntity.class, bounds)) {
+                int eid = entity.getId();
+                if (eid < minId) {
+                    minId = eid;
+                }
+            }
+        }
+        return minId;
     }
 
     protected void addTrails(Matrix4f transform) {
