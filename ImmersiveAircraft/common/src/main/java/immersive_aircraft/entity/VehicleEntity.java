@@ -359,7 +359,7 @@ public abstract class VehicleEntity extends Entity {
     }
 
     // --- GLOBAL PILOT LIMIT ---
-    private static int AIRCRAFT_PILOT_LIMIT = 1; // Now mutable
+    private static int AIRCRAFT_PILOT_LIMIT = 7; // Now mutable, default is 7
     protected static final java.util.Set<java.util.UUID> AIRCRAFT_PILOTS = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public static void setAircraftPilotLimit(int limit) {
@@ -462,18 +462,6 @@ public abstract class VehicleEntity extends Entity {
     public void tick() {
         super.tick();
         Level world = this.level();
-        // Print aircraft pilot info every 200 ticks (10 seconds), only from the aircraft with the lowest entityId
-        if (world != null && !world.isClientSide && this.tickCount % 200 == 0 && this.getId() == getLowestAircraftId()) {
-            java.util.List<String> names = new java.util.ArrayList<>();
-            for (java.util.UUID uuid : AIRCRAFT_PILOTS) {
-                Player p = world.getPlayerByUUID(uuid);
-                if (p != null) {
-                    names.add(p.getName().getString());
-                }
-            }
-            System.out.println("[ImmersiveAircraft] Aircraft pilots: " + names.size() + (names.isEmpty() ? "" : " [" + String.join(", ", names) + "]"));
-        }
-
         if (tickCount % 10 == 0) {
             secondLastX = lastX;
             secondLastY = lastY;
