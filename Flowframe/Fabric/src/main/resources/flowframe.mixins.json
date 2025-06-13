@@ -15,7 +15,8 @@
     "MixinEndPortalBlock",
     "MixinChatFormat",
     "MixinServerWorld_NoNiftyCartsPlow",
-    "MixinLivingEntity_PvpToggle"
+    "MixinLivingEntity_PvpToggle",
+    "MixinLivingEntity_RemoveSpelunker"
   ],
   "injectors": {
     "defaultRequire": 1
