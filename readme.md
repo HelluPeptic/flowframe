@@ -85,6 +85,42 @@ Flowframe is a modular Minecraft mod for Fabric that adds quality-of-life and se
 - **Command:** `/flowframe version`
 - **Permissions:** `flowframe.command.version` (or operator level 2+)
 
+### 13. `/levitate` Command
+
+- **Description:** Grants the levitation effect to a player for a short duration.
+- **Command:** `/levitate <player>`
+- **Permissions:** `flowframe.command.levitate` (or operator level 2+)
+
+### 14. `/setaircraftpilotlimit` Command
+
+- **Description:** Sets the maximum number of pilots for an aircraft entity.
+- **Command:** `/setaircraftpilotlimit <limit>`
+- **Permissions:** `flowframe.command.setaircraftpilotlimit` (or operator level 2+)
+
+### 15. Removal of Spelunker Potion
+
+- **Description:** The spelunker potion has been removed from the mod.
+- **Commands:** None
+- **Permissions:** None
+
+### 16. `/linked` Command
+
+- **Description:** Shows or manages linked accounts or entities.
+- **Command:** `/linked [player]`
+- **Permissions:** `flowframe.command.linked` (or operator level 2+)
+
+### 17. `/gl i` Command
+
+- **Description:** Displays information about the current glow list or glowing entities.
+- **Command:** `/gl i`
+- **Permissions:** `flowframe.command.gl.inspect` (or operator level 2+)
+
+### 18. `/gl p` Command
+
+- **Description:** Manages or displays glow list participants.
+- **Command:** `/gl p`
+- **Permissions:** `flowframe.command.gl.page` (or operator level 2+)
+
 ---
 
 ## Permissions
@@ -98,6 +134,11 @@ Flowframe is a modular Minecraft mod for Fabric that adds quality-of-life and se
   - `flowframe.feature.oreannouncements`
   - `flowframe.command.endtoggle`
   - `flowframe.groupcolor.&a` (for green tablist name)
+  - `flowframe.command.levitate`
+  - `flowframe.command.setaircraftpilotlimit`
+  - `flowframe.command.linked`
+  - `flowframe.command.gl.inspect`
+  - `flowframe.command.gl.page`
 
 ---
 
