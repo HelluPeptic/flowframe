@@ -115,6 +115,8 @@ public class InventoryRestoreFeature {
                 Object trinketComponent = comp.get();
                 java.lang.reflect.Method writeToNbt = trinketComponent.getClass().getMethod("writeToNbt", NbtCompound.class);
                 writeToNbt.invoke(trinketComponent, trinkets);
+                // Debug: print trinket NBT to server log
+                System.out.println("[Flowframe] Trinket NBT for backup: " + trinkets);
             }
         } catch (Throwable ignored) {}
         backup.put("trinkets", trinkets);
@@ -227,8 +229,12 @@ public class InventoryRestoreFeature {
             java.util.Optional<?> comp = (java.util.Optional<?>) getTrinketComponent.invoke(null, player);
             if (comp.isPresent()) {
                 Object trinketComponent = comp.get();
-                java.lang.reflect.Method readFromNbt = trinketComponent.getClass().getMethod("readFromNbt", NbtCompound.class);
-                readFromNbt.invoke(trinketComponent, trinkets);
+                if (!trinkets.isEmpty()) {
+                    java.lang.reflect.Method readFromNbt = trinketComponent.getClass().getMethod("readFromNbt", NbtCompound.class);
+                    readFromNbt.invoke(trinketComponent, trinkets);
+                } else {
+                    context.getSource().sendFeedback(() -> Text.literal("[Flowframe] No trinket data found in backup for " + playerName), false);
+                }
             }
         } catch (Throwable ignored) {}
         player.currentScreenHandler.sendContentUpdates();
