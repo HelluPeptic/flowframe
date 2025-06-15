@@ -7,8 +7,10 @@ import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.text.Text;
 
+import com.flowframe.features.countentities.CountEntitiesCommand;
+
 public class VersionCommand {
-    public static final String MOD_VERSION = "1.25.6"; // Set manually to match gradle.properties
+    public static final String MOD_VERSION = "1.25.9";
 
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
@@ -17,6 +19,8 @@ public class VersionCommand {
                     .executes(VersionCommand::sendVersion))
             );
         });
+        // Register countentities command
+        CountEntitiesCommand.register();
     }
 
     private static int sendVersion(CommandContext<ServerCommandSource> context) {

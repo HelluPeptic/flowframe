@@ -34,6 +34,7 @@ import com.flowframe.features.obtaincard.ObtainCardFeature;
 import com.flowframe.features.linked.LinkedCommandFeature;
 import com.flowframe.features.levitate.LevitateCommandFeature;
 import com.flowframe.features.inventoryrestore.InventoryRestoreFeature;
+import com.flowframe.features.countentities.CountEntitiesCommand;
 
 public class FlowframeMod implements ModInitializer {
     @Override
@@ -54,6 +55,7 @@ public class FlowframeMod implements ModInitializer {
         LinkedCommandFeature.register();
         LevitateCommandFeature.register();
         InventoryRestoreFeature.register();
+        CountEntitiesCommand.register();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }

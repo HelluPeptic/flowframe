@@ -18,7 +18,7 @@ Flowframe is a modular Minecraft mod for Fabric that adds quality-of-life and se
 - **Commands:** None
 - **Permissions:** None (automatic)
 
-### 3. Invisible Item Frames (feature turned off)
+### 3. Invisible Item Frames (not added)
 
 - **Description:** Shift + right-click an item frame to make it invisible. Right-click again to reveal.
 - **Commands:** None
@@ -73,7 +73,7 @@ Flowframe is a modular Minecraft mod for Fabric that adds quality-of-life and se
 - **Permissions:**
   - Tablist and chat formatting: automatic, but LuckPerms prefixes and group color permissions are respected (e.g., `flowframe.groupcolor.&a` for green).
 
-### 11. Plow Deny
+### 11. Plow Deny (not added)
 
 - **Description:** Prevents the Nifty Carts plow entity from being placed due to a bug causing server crashes.
 - **Commands:** None
@@ -121,6 +121,23 @@ Flowframe is a modular Minecraft mod for Fabric that adds quality-of-life and se
 - **Command:** `/gl p`
 - **Permissions:** `flowframe.command.gl.page` (or operator level 2+)
 
+### 19. Inventory Restore
+
+- **Description:** Automatically backs up player inventories (including trinket slots and compatible backpacks) on join, leave, and death. Allows viewing, restoring, and exporting previous inventory states.
+- **Commands:**
+  - `/flowframe inventoryrestore view <player>` – View available backups for a player.
+  - `/flowframe inventoryrestore restore <player> [backup]` – Restore a specific backup (default: latest).
+  - `/flowframe inventoryrestore save <player>` (not added) – Manually create a backup.
+  - `/flowframe inventoryrestore export <player>` (not added) – Export a backup to file.
+  - `/flowframe inventoryrestore cleanup` (not added) – Clean up old backups.
+- **Permissions:**
+  - View: `flowframe.feature.inventoryrestore.view`
+  - Restore: `flowframe.feature.inventoryrestore.restore`
+  - Manual backup: `flowframe.feature.inventoryrestore.manualbackup`
+  - Export: `flowframe.feature.inventoryrestore.export`
+  - Cleanup: `flowframe.feature.inventoryrestore.cleanup`
+  - (Operators always have access)
+
 ---
 
 ## Permissions
@@ -139,6 +156,11 @@ Flowframe is a modular Minecraft mod for Fabric that adds quality-of-life and se
   - `flowframe.command.linked`
   - `flowframe.command.gl.inspect`
   - `flowframe.command.gl.page`
+  - `flowframe.feature.inventoryrestore.view`
+  - `flowframe.feature.inventoryrestore.restore`
+  - `flowframe.feature.inventoryrestore.manualbackup`
+  - `flowframe.feature.inventoryrestore.export`
+  - `flowframe.feature.inventoryrestore.cleanup`
 
 ---
 
