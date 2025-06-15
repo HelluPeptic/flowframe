@@ -147,6 +147,12 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
   - `/obtain reverse_card` – Costs 10 Netherite Ingots, gives a Reverse Card.
 - **Permissions:** `flowframe.command.obtain` (or operator level 2+)
 
+### 21. `/flowframe countentities` Command
+
+- **Description:** Counts all entities in all worlds and displays the top 15 most common entity types to the player.
+- **Command:** `/flowframe countentities`
+- **Permissions:** `flowframe.command.countentities` (or operator level 2+)
+
 ---
 
 ## Permissions
@@ -171,6 +177,7 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
   - `flowframe.feature.inventoryrestore.export`
   - `flowframe.feature.inventoryrestore.cleanup`
   - `flowframe.command.obtain`
+  - `flowframe.command.countentities`
 
 ---
 
