@@ -1,6 +1,6 @@
 # Flowframe Mod
 
-Flowframe is a modular Minecraft mod for Fabric that adds quality-of-life and server management features. Each feature is permission-based and can be enabled/disabled by server admins.
+Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server management features for the FlowSMP. Each player related feature is permission-based and can be enabled/disabled by server admins.
 
 ---
 
@@ -18,7 +18,7 @@ Flowframe is a modular Minecraft mod for Fabric that adds quality-of-life and se
 - **Commands:** None
 - **Permissions:** None (automatic)
 
-### 3. Invisible Item Frames (not added)
+### 3. Invisible Item Frames (disabled)
 
 - **Description:** Shift + right-click an item frame to make it invisible. Right-click again to reveal.
 - **Commands:** None
@@ -138,6 +138,15 @@ Flowframe is a modular Minecraft mod for Fabric that adds quality-of-life and se
   - Cleanup: `flowframe.feature.inventoryrestore.cleanup`
   - (Operators always have access)
 
+### 20. `/obtain` Command
+
+- **Description:** Allows players to exchange Netherite Ingots for special cards from Majrusz's Accessories mod.
+- **Commands:**
+  - `/obtain removal_card` – Costs 1 Netherite Ingot, gives a Removal Card.
+  - `/obtain gambling_card` – Costs 3 Netherite Ingots, gives a Gambling Card.
+  - `/obtain reverse_card` – Costs 10 Netherite Ingots, gives a Reverse Card.
+- **Permissions:** `flowframe.command.obtain` (or operator level 2+)
+
 ---
 
 ## Permissions
@@ -161,16 +170,12 @@ Flowframe is a modular Minecraft mod for Fabric that adds quality-of-life and se
   - `flowframe.feature.inventoryrestore.manualbackup`
   - `flowframe.feature.inventoryrestore.export`
   - `flowframe.feature.inventoryrestore.cleanup`
+  - `flowframe.command.obtain`
 
 ---
 
-## Adding/Removing Features
+## Removing Features
 
 - Each feature is modular and can be enabled/disabled by removing its registration in `FlowframeMod.java`.
-- To add a new feature, create a new Java class in `features/` and register it in `FlowframeMod.java`.
 
 ---
-
-## License
-
-See [license.md](license.md).
