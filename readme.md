@@ -156,9 +156,15 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
 ### 22. Potion Duration Extension (Vanilla & Modded)
 
 - **Description:**
-  - Ensures all potions (vanilla and modded) last at least 2 hours (144,000 ticks) when applied, except for effects from beacons and suspicious stew.
+  - Ensures all potions (vanilla and modded) last at least 2 hours (144,000 ticks) when applied, except for effects from beacons, suspicious stew, and certain excluded effects.
   - Modded effects like "tipsy" from Brewin and Chewin are also extended to 2 hours, even if the mod applies them with a different method.
-  - For "tipsy", a separate mixin ensures the effect is extended every tick, regardless of how it is applied.
+  - **The following effects are NOT extended and/or are disabled:**
+    - Slowness (vanilla)
+    - Health Boost (vanilla)
+    - Mining Fatigue (vanilla, completely disabled)
+    - Poison (vanilla, completely disabled)
+    - All effects from the Simply Skills mod
+    - All effects from the Simply Swords mod
 - **Commands:** None
 - **Permissions:** None (automatic)
 
