@@ -76,7 +76,7 @@ public abstract class MixinLivingEntity_PotionDuration {
                     MIN_DURATION,
                     effect.getAmplifier(),
                     effect.isAmbient(),
-                    effect.shouldShowParticles(),
+                    false, // Hide particles
                     effect.shouldShowIcon()
                 );
                 LivingEntity self = (LivingEntity)(Object)this;
