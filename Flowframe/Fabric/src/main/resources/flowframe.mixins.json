@@ -18,7 +18,8 @@
     "MixinLivingEntity_PvpToggle",
     "MixinLivingEntity_RemoveSpelunker",
     "MixinLivingEntity_PotionDuration",
-    "MixinPlayerEntity_StewFlag"
+    "MixinPlayerEntity_StewFlag",
+    "MixinLivingEntity_TipsyDuration"
   ],
   "injectors": {
     "defaultRequire": 1
