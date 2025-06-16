@@ -4,6 +4,7 @@ import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.util.Identifier;
 import net.minecraft.registry.Registries;
+import net.minecraft.entity.effect.StatusEffects;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -41,6 +42,32 @@ public abstract class MixinLivingEntity_PotionDuration {
             return;
         }
         Identifier effectId = Registries.STATUS_EFFECT.getId(effect.getEffectType());
+        // Skip slowness
+        if (effect.getEffectType() == StatusEffects.SLOWNESS) {
+            return;
+        }
+        // Skip health boost
+        if (effect.getEffectType() == StatusEffects.HEALTH_BOOST) {
+            return;
+        }
+        // Disable mining fatigue
+        if (effect.getEffectType() == StatusEffects.MINING_FATIGUE) {
+            cir.setReturnValue(false);
+            return;
+        }
+        // Disable poison
+        if (effect.getEffectType() == StatusEffects.POISON) {
+            cir.setReturnValue(false);
+            return;
+        }
+        // Skip all effects from Simply Skills
+        if (effectId != null && "simplyskills".equals(effectId.getNamespace())) {
+            return;
+        }
+        // Skip all effects from Simply Swords
+        if (effectId != null && "simplyswords".equals(effectId.getNamespace())) {
+            return;
+        }
         if ((effectId != null && effectId.equals(TIPSY_ID)) || effect.getDuration() < MIN_DURATION) {
             flowframe$recursing.set(true);
             try {
