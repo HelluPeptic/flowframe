@@ -10,7 +10,7 @@ import net.minecraft.text.Text;
 import com.flowframe.features.countentities.CountEntitiesCommand;
 
 public class VersionCommand {
-    public static final String MOD_VERSION = "1.25.9";
+    public static final String MOD_VERSION = "1.25.10";
 
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
