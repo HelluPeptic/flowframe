@@ -17,7 +17,8 @@
     "MixinServerWorld_NoNiftyCartsPlow",
     "MixinLivingEntity_PvpToggle",
     "MixinLivingEntity_RemoveSpelunker",
-    "MixinLivingEntity_PotionDuration"
+    "MixinLivingEntity_PotionDuration",
+    "MixinPlayerEntity_StewFlag"
   ],
   "injectors": {
     "defaultRequire": 1
