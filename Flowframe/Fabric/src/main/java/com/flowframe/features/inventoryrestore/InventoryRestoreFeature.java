@@ -68,12 +68,6 @@ public class InventoryRestoreFeature {
                             )
                         )
                     )
-                    .then(CommandManager.literal("export")
-                        .requires(source -> Permissions.check(source, "flowframe.feature.inventoryrestore.export") || source.hasPermissionLevel(2))
-                        .then(CommandManager.argument("player", StringArgumentType.word())
-                            .executes(InventoryRestoreFeature::exportBackup)
-                        )
-                    )
                     .then(CommandManager.literal("cleanup")
                         .requires(source -> Permissions.check(source, "flowframe.feature.inventoryrestore.cleanup") || source.hasPermissionLevel(2))
                         .executes(InventoryRestoreFeature::cleanupBackups)
@@ -189,8 +183,15 @@ public class InventoryRestoreFeature {
     }
 
     private static int manualBackup(CommandContext<ServerCommandSource> context) {
-        // TODO: Implement manual backup
-        context.getSource().sendFeedback(() -> Text.literal("[Flowframe] Manual backup is not yet implemented."), false);
+        String playerName = StringArgumentType.getString(context, "player");
+        MinecraftServer server = context.getSource().getServer();
+        ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerName);
+        if (player == null) {
+            context.getSource().sendError(Text.literal("[Flowframe] Player not found or not online."));
+            return 0;
+        }
+        backupPlayerInventory(player);
+        context.getSource().sendFeedback(() -> Text.literal("[Flowframe] Manual backup created for " + playerName), false);
         return Command.SINGLE_SUCCESS;
     }
 
@@ -242,15 +243,26 @@ public class InventoryRestoreFeature {
         return Command.SINGLE_SUCCESS;
     }
 
-    private static int exportBackup(CommandContext<ServerCommandSource> context) {
-        // TODO: Implement export backup
-        context.getSource().sendFeedback(() -> Text.literal("[Flowframe] Export backup is not yet implemented."), false);
-        return Command.SINGLE_SUCCESS;
-    }
-
     private static int cleanupBackups(CommandContext<ServerCommandSource> context) {
-        // TODO: Implement cleanup
-        context.getSource().sendFeedback(() -> Text.literal("[Flowframe] Cleanup is not yet implemented."), false);
+        int totalPlayers = 0;
+        int totalDeleted = 0;
+        for (Map.Entry<UUID, List<NbtCompound>> entry : playerBackups.entrySet()) {
+            List<NbtCompound> backups = entry.getValue();
+            if (backups.size() > 1) {
+                int toDelete = backups.size() - 1;
+                // Keep only the most recent backup
+                NbtCompound mostRecent = backups.get(0);
+                backups.clear();
+                backups.add(mostRecent);
+                savePlayerBackups(entry.getKey(), backups);
+                totalDeleted += toDelete;
+                totalPlayers++;
+            }
+        }
+        context.getSource().sendFeedback(
+            () -> Text.literal("[Flowframe] Cleanup complete: " + totalDeleted + " old backups removed for " + totalPlayers + " player(s)."),
+            false
+        );
         return Command.SINGLE_SUCCESS;
     }
 }
