@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.ArrayList;
 
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
@@ -246,23 +247,22 @@ public class InventoryRestoreFeature {
     private static int cleanupBackups(CommandContext<ServerCommandSource> context) {
         int totalPlayers = 0;
         int totalDeleted = 0;
+        int keepCount = 3;
         for (Map.Entry<UUID, List<NbtCompound>> entry : playerBackups.entrySet()) {
             List<NbtCompound> backups = entry.getValue();
-            if (backups.size() > 1) {
-                int toDelete = backups.size() - 1;
-                // Keep only the most recent backup
-                NbtCompound mostRecent = backups.get(0);
+            if (backups.size() > keepCount) {
+                int toDelete = backups.size() - keepCount;
+                // Keep only the most recent backups
+                List<NbtCompound> mostRecent = new ArrayList<>(backups.subList(0, keepCount));
                 backups.clear();
-                backups.add(mostRecent);
+                backups.addAll(mostRecent);
                 savePlayerBackups(entry.getKey(), backups);
                 totalDeleted += toDelete;
                 totalPlayers++;
             }
         }
-        context.getSource().sendFeedback(
-            () -> Text.literal("[Flowframe] Cleanup complete: " + totalDeleted + " old backups removed for " + totalPlayers + " player(s)."),
-            false
-        );
+        String msg = "[Flowframe] Cleanup complete: " + totalDeleted + " old backups removed for " + totalPlayers + " player(s).";
+        context.getSource().sendFeedback(() -> Text.literal(msg), false);
         return Command.SINGLE_SUCCESS;
     }
 }

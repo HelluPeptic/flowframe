@@ -127,14 +127,12 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
 - **Commands:**
   - `/flowframe inventoryrestore view <player>` – View available backups for a player.
   - `/flowframe inventoryrestore restore <player> [backup]` – Restore a specific backup (default: latest).
-  - `/flowframe inventoryrestore save <player>` (not added) – Manually create a backup.
-  - `/flowframe inventoryrestore export <player>` (not added) – Export a backup to file.
-  - `/flowframe inventoryrestore cleanup` (not added) – Clean up old backups.
+  - `/flowframe inventoryrestore save <player>` – Manually create a backup.
+  - `/flowframe inventoryrestore cleanup` – Clean up old backups. Saves 3 for each player
 - **Permissions:**
   - View: `flowframe.feature.inventoryrestore.view`
   - Restore: `flowframe.feature.inventoryrestore.restore`
   - Manual backup: `flowframe.feature.inventoryrestore.manualbackup`
-  - Export: `flowframe.feature.inventoryrestore.export`
   - Cleanup: `flowframe.feature.inventoryrestore.cleanup`
   - (Operators always have access)
 
