@@ -50,6 +50,10 @@ public abstract class MixinLivingEntity_PotionDuration {
         if (effect.getEffectType() == StatusEffects.HEALTH_BOOST) {
             return;
         }
+        // Skip regeneration
+        if (effect.getEffectType() == StatusEffects.REGENERATION) {
+            return;
+        }
         // Disable mining fatigue
         if (effect.getEffectType() == StatusEffects.MINING_FATIGUE) {
             cir.setReturnValue(false);
