@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "shell",
+			"label": "Build 1.21.1-Flowframe Fabric mod",
+			"command": "./gradlew build",
+			"args": [],
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": [
+				"$java"
+			]
+		}
+	]
+}

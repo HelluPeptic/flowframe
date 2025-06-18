@@ -1,0 +1,27 @@
+{
+  "required": true,
+  "package": "com.flowframe.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "MixinServerPlayerEntity",
+    "MixinExplosion",
+    "MixinFarmlandBlock",
+    "MixinCreeperEntity",
+    "MixinServerPlayNetworkHandler",
+    "MixinPlayerManager_JoinMessage",
+    "MixinServerPlayerEntity_TablistName",
+    "MixinServerWorld_NoPhantoms",
+    "MixinComposterBlock",
+    "MixinEndPortalBlock",
+    "MixinChatFormat",
+    "MixinServerWorld_NoNiftyCartsPlow",
+    "MixinLivingEntity_PvpToggle",
+    "MixinLivingEntity_RemoveSpelunker",
+    "MixinLivingEntity_PotionDuration",
+    "MixinLivingEntity_TipsyDuration",
+    "MixinPotionItem"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
