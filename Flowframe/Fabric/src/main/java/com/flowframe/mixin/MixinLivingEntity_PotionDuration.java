@@ -2,9 +2,8 @@ package com.flowframe.mixin;
 
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.util.Identifier;
-import net.minecraft.registry.Registries;
-import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -14,8 +13,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class MixinLivingEntity_PotionDuration {
     // Minimum duration: 2 hours in ticks
     private static final int MIN_DURATION = 2 * 60 * 60 * 20;
-    private static final Identifier TIPSY_ID = new Identifier("brewinandchewin", "tipsy");
-    private static final ThreadLocal<Boolean> flowframe$recursing = ThreadLocal.withInitial(() -> false);
 
     @Inject(
         method = "addStatusEffect",
@@ -26,55 +23,29 @@ public abstract class MixinLivingEntity_PotionDuration {
         if (effect == null || effect.isAmbient()) {
             return;
         }
-        if (flowframe$recursing.get()) {
+        String effectId = effect.getEffectType().getTranslationKey();
+        // --- Always extend HerbalBrews effects ---
+        boolean isHerbalBrews = effectId.startsWith("effect.herbalbrews.");
+        if (isHerbalBrews && effect.getDuration() < MIN_DURATION) {
+            StatusEffectInstance longer = new StatusEffectInstance(
+                effect.getEffectType(),
+                MIN_DURATION,
+                effect.getAmplifier(),
+                effect.isAmbient(),
+                false,
+                effect.shouldShowIcon()
+            );
+            LivingEntity self = (LivingEntity)(Object)this;
+            cir.setReturnValue(self.addStatusEffect(longer));
             return;
         }
-        // Skip suspicious stew effects using ThreadLocal flag
+        // Only apply for drinkable potions using the ThreadLocal flag
         try {
-            Class<?> stewMixin = Class.forName("com.flowframe.mixin.MixinSuspiciousStewItem");
-            boolean isStew = (boolean) stewMixin.getMethod("flowframe$isApplyingStewEffect").invoke(null);
-            if (isStew) {
-                return;
-            }
-        } catch (Exception ignored) {}
-        int duration = effect.getDuration();
-        if (duration == 7 || duration == 11) {
-            return;
-        }
-        Identifier effectId = Registries.STATUS_EFFECT.getId(effect.getEffectType());
-        // Skip slowness
-        if (effect.getEffectType() == StatusEffects.SLOWNESS) {
-            return;
-        }
-        // Skip health boost
-        if (effect.getEffectType() == StatusEffects.HEALTH_BOOST) {
-            return;
-        }
-        // Skip regeneration
-        if (effect.getEffectType() == StatusEffects.REGENERATION) {
-            return;
-        }
-        // Disable mining fatigue
-        if (effect.getEffectType() == StatusEffects.MINING_FATIGUE) {
-            cir.setReturnValue(false);
-            return;
-        }
-        // Disable poison
-        if (effect.getEffectType() == StatusEffects.POISON) {
-            cir.setReturnValue(false);
-            return;
-        }
-        // Skip all effects from Simply Skills
-        if (effectId != null && "simplyskills".equals(effectId.getNamespace())) {
-            return;
-        }
-        // Skip all effects from Simply Swords
-        if (effectId != null && "simplyswords".equals(effectId.getNamespace())) {
-            return;
-        }
-        if ((effectId != null && effectId.equals(TIPSY_ID)) || effect.getDuration() < MIN_DURATION) {
-            flowframe$recursing.set(true);
-            try {
+            Class<?> potionMixin = Class.forName("com.flowframe.mixin.MixinPotionItem");
+            java.lang.reflect.Method flagMethod = potionMixin.getDeclaredMethod("flowframe$isApplyingPotionEffect");
+            flagMethod.setAccessible(true);
+            boolean isPotion = (boolean) flagMethod.invoke(null);
+            if (isPotion && effect.getDuration() < MIN_DURATION) {
                 StatusEffectInstance longer = new StatusEffectInstance(
                     effect.getEffectType(),
                     MIN_DURATION,
@@ -85,8 +56,29 @@ public abstract class MixinLivingEntity_PotionDuration {
                 );
                 LivingEntity self = (LivingEntity)(Object)this;
                 cir.setReturnValue(self.addStatusEffect(longer));
-            } finally {
-                flowframe$recursing.set(false);
+                return;
+            }
+        } catch (Exception ignored) {
+            // If reflection fails, just continue to the next logic
+        }
+        // --- Special case: If holding Rooibos Tea, always extend regeneration to 2 hours ---
+        if (effectId.equals("effect.minecraft.regeneration") && ((LivingEntity)(Object)this).getType().getTranslationKey().equals("entity.minecraft.player")) {
+            PlayerEntity player = (PlayerEntity)(Object)this;
+            ItemStack mainHand = player.getMainHandStack();
+            ItemStack offHand = player.getOffHandStack();
+            if (mainHand.getTranslationKey().equals("item.herbalbrews.rooibos_tea") || offHand.getTranslationKey().equals("item.herbalbrews.rooibos_tea")) {
+                if (effect.getDuration() < MIN_DURATION) {
+                    StatusEffectInstance longer = new StatusEffectInstance(
+                        effect.getEffectType(),
+                        MIN_DURATION,
+                        effect.getAmplifier(),
+                        effect.isAmbient(),
+                        false, //Hide particles
+                        effect.shouldShowIcon()
+                    );
+                    cir.setReturnValue(player.addStatusEffect(longer));
+                    return;
+                }
             }
         }
     }
