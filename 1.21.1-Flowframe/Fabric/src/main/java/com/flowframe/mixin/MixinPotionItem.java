@@ -50,7 +50,7 @@ public abstract class MixinPotionItem {
         for (StatusEffectInstance effect : effects) {
             // Exception: Always extend 'feral', 'balanced', 'tough', 'lifeleech', 'fortune', 'bonding', 'deeprush', and 'regeneration' from HerbalBrews
             // Get the effect's registry id as a string
-            String effectId = Registries.STATUS_EFFECT.getId(effect.getEffectType().get()).toString();
+            String effectId = Registries.STATUS_EFFECT.getId(effect.getEffectType().value()).toString();
             boolean isFeral = effectId.equals("effect.herbalbrews.feral");
             boolean isBalanced = effectId.equals("effect.herbalbrews.balanced");
             boolean isTough = effectId.equals("effect.herbalbrews.tough");

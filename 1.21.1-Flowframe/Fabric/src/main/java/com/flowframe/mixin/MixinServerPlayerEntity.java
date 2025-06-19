@@ -44,14 +44,12 @@ public abstract class MixinServerPlayerEntity {
             // Drop player head at death location
             ItemStack head = new ItemStack(Items.PLAYER_HEAD);
             NbtCompound nbt = new NbtCompound();
-            NbtCompound skullOwner = new NbtCompound();
-            // Set both UUID and Name for correct skin
-            UUID uuid = player.getGameProfile().getId();
-            skullOwner.putUuid("Id", uuid);
-            skullOwner.putString("Name", player.getGameProfile().getName());
-            nbt.put("SkullOwner", skullOwner);
-            // Use saveNbt instead of setNbt
-            head.saveNbt(nbt);
+            nbt.putString("id", net.minecraft.registry.Registries.ITEM.getId(head.getItem()).toString());
+            nbt.putInt("Count", head.getCount());
+            NbtCompound tag = head.getTag();
+            if (tag != null && !tag.isEmpty()) {
+                nbt.put("tag", tag.copy());
+            }
             ServerWorld world = (ServerWorld) player.getWorld();
             BlockPos pos = player.getBlockPos();
             world.spawnEntity(new net.minecraft.entity.ItemEntity(world, pos.getX() + 0.5, pos.getY() + 0.5,

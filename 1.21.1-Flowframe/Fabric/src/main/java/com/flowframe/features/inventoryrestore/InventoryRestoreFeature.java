@@ -89,12 +89,18 @@ public class InventoryRestoreFeature {
     private static void backupPlayerInventory(ServerPlayerEntity player) {
         NbtCompound backup = new NbtCompound();
         NbtList items = new NbtList();
+        MinecraftServer server = player.getServer();
+        var lookup = server.getRegistryManager();
         for (int i = 0; i < player.getInventory().size(); i++) {
             ItemStack stack = player.getInventory().getStack(i);
             if (!stack.isEmpty()) {
                 NbtCompound itemNbt = new NbtCompound();
-                // Use saveNbt instead of writeNbt
-                stack.saveNbt(itemNbt);
+                itemNbt.putString("id", net.minecraft.registry.Registries.ITEM.getId(stack.getItem()).toString());
+                itemNbt.putInt("Count", stack.getCount());
+                NbtCompound tag = stack.getTag();
+                if (tag != null && !tag.isEmpty()) {
+                    itemNbt.put("tag", tag.copy());
+                }
                 itemNbt.putInt("Slot", i);
                 items.add(itemNbt);
             }
@@ -201,6 +207,7 @@ public class InventoryRestoreFeature {
         String playerName = StringArgumentType.getString(context, "player");
         MinecraftServer server = context.getSource().getServer();
         ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerName);
+        var lookup = server.getRegistryManager();
         if (player == null) {
             context.getSource().sendError(Text.literal("[Flowframe] Player not found or not online."));
             return 0;
@@ -221,9 +228,7 @@ public class InventoryRestoreFeature {
         for (int i = 0; i < items.size(); i++) {
             NbtCompound itemNbt = items.getCompound(i);
             int slot = itemNbt.getInt("Slot");
-            // Use ItemStack.fromNbt with WrapperLookup and NbtElement
-            // TODO: Replace 'lookup' with the actual WrapperLookup instance from your context (e.g., server.getRegistryManager().getWrapperLookup())
-            ItemStack stack = ItemStack.fromNbt(lookup, itemNbt);
+            ItemStack stack = ItemStack.fromNbt(lookup, itemNbt).orElse(ItemStack.EMPTY);
             player.getInventory().setStack(slot, stack);
         }
         // Trinket support: restore trinket slots if Trinkets mod is present (reflection)

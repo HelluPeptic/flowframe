@@ -48,8 +48,8 @@ public class TablistUtil {
             .append(Text.literal("\n" + player.getName().getString()).styled(style -> style.withColor(Formatting.WHITE)))
             .append(Text.literal("\nOnline players: " + online).styled(style -> style.withColor(Formatting.GRAY)))
             .append(Text.literal("\n "));
-        // Use getLatency() instead of accessing networkHandler.latency directly
-        int ping = player.getLatency();
+        // Use correct ping/latency accessor for 1.21.1
+        int ping = player.networkHandler.getLatency();
         Text footer = Text.literal("\n ")
             .append(Text.literal("Ping: " + ping).styled(style -> style.withColor(Formatting.GOLD)));
         player.networkHandler.sendPacket(new PlayerListHeaderS2CPacket(header, footer));

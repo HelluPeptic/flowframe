@@ -92,8 +92,7 @@ public class InventoryRestoreFeature {
         for (int i = 0; i < player.getInventory().size(); i++) {
             ItemStack stack = player.getInventory().getStack(i);
             if (!stack.isEmpty()) {
-                NbtCompound itemNbt = new NbtCompound();
-                stack.writeNbt(itemNbt);
+                NbtCompound itemNbt = stack.toNbt();
                 itemNbt.putInt("Slot", i);
                 items.add(itemNbt);
             }

@@ -4,6 +4,7 @@ import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
+import net.minecraft.registry.Registries;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -24,7 +25,7 @@ public abstract class MixinLivingEntity_PotionDuration {
             return;
         }
         // Get the effect's registry id as a string
-        String effectId = Registries.STATUS_EFFECT.getId(effect.getEffectType().get()).toString();
+        String effectId = Registries.STATUS_EFFECT.getId(effect.getEffectType().value()).toString();
         // --- Always extend HerbalBrews effects ---
         boolean isHerbalBrews = effectId.startsWith("effect.herbalbrews.");
         if (isHerbalBrews && effect.getDuration() < MIN_DURATION) {
