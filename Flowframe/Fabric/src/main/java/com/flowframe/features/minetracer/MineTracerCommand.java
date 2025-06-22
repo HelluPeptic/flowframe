@@ -13,12 +13,12 @@ import java.time.Instant;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.minecraft.inventory.Inventory;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.inventory.Inventory;
+import net.minecraft.util.Formatting;
+import net.minecraft.text.Text;
 import java.util.Map;
 import java.util.UUID;
 import java.util.HashMap;
@@ -35,22 +35,15 @@ public class MineTracerCommand {
                             .executes(MineTracerCommand::lookup)
                         )
                     )
-                    .then(CommandManager.literal("lookupblocks")
-                        .then(CommandManager.argument("arg", StringArgumentType.greedyString())
-                            .suggests(MineTracerCommand::suggestPlayers)
-                            .executes(MineTracerCommand::lookupBlocks)
-                        )
-                    )
-                    .then(CommandManager.literal("lookupsigns")
-                        .then(CommandManager.argument("arg", StringArgumentType.greedyString())
-                            .suggests(MineTracerCommand::suggestPlayers)
-                            .executes(MineTracerCommand::lookupSigns)
-                        )
-                    )
                     .then(CommandManager.literal("restore")
                         .then(CommandManager.argument("arg", StringArgumentType.greedyString())
                             .suggests(MineTracerCommand::suggestPlayers)
                             .executes(MineTracerCommand::restore)
+                        )
+                    )
+                    .then(CommandManager.literal("page")
+                        .then(CommandManager.argument("page", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
+                            .executes(MineTracerCommand::lookupPage)
                         )
                     )
                 )
@@ -59,22 +52,61 @@ public class MineTracerCommand {
     }
 
     private static CompletableFuture<Suggestions> suggestPlayers(CommandContext<ServerCommandSource> ctx, SuggestionsBuilder builder) {
-        String input = builder.getRemaining().toLowerCase();
-        if (input.startsWith("range:")) {
-            builder.suggest("range:");
-        }
-        if (input.contains("user:")) {
+        String input = builder.getInput();
+        int start = builder.getStart();
+        String[] parts = input.substring(start).split(" ");
+        String last = parts.length > 0 ? parts[parts.length - 1] : "";
+        int lastStart = input.lastIndexOf(last);
+        SuggestionsBuilder subBuilder = builder.createOffset(lastStart);
+
+        // Suggest main filter keywords if not already present in the input
+        if (!input.contains("user:")) subBuilder.suggest("user:");
+        if (!input.contains("time:")) subBuilder.suggest("time:");
+        if (!input.contains("action:")) subBuilder.suggest("action:");
+        if (!input.contains("range:")) subBuilder.suggest("range:");
+
+        // Suggest player names after user:
+        if (last.startsWith("user:")) {
+            String afterUser = last.substring(5);
             for (String name : LogStorage.getAllPlayerNames()) {
-                if (name.toLowerCase().startsWith(input.replaceFirst(".*user:", ""))) {
-                    builder.suggest("user:" + name);
+                if (name.toLowerCase().startsWith(afterUser.toLowerCase())) {
+                    subBuilder.suggest("user:" + name);
                 }
             }
-        } else if (input.endsWith(" ") || input.isEmpty() || input.startsWith("user:")) {
-            for (String name : LogStorage.getAllPlayerNames()) {
-                builder.suggest("user:" + name);
+        } else if (last.startsWith("action:")) {
+            String afterAction = last.substring(7);
+            String[] actions = {"inventory", "deposited", "withdrew"};
+            for (String act : actions) {
+                if (act.startsWith(afterAction)) {
+                    subBuilder.suggest("action:" + act);
+                }
+            }
+        } else if (last.startsWith("time:")) {
+            String afterTime = last.substring(5);
+            String[] times = {"1m", "5m", "1h", "1d", "1w", "1mo", "1y"};
+            for (String t : times) {
+                if (t.startsWith(afterTime)) {
+                    subBuilder.suggest("time:" + t);
+                }
+            }
+        } else if (last.startsWith("range:")) {
+            String afterRange = last.substring(6);
+            String[] ranges = {"10", "50", "100", "200"};
+            for (String r : ranges) {
+                if (r.startsWith(afterRange)) {
+                    subBuilder.suggest("range:" + r);
+                }
+            }
+        } else {
+            // If the last word is empty, suggest all main keywords
+            if (last.isEmpty()) {
+                subBuilder.suggest("user:");
+                subBuilder.suggest("time:");
+                subBuilder.suggest("action:");
+                subBuilder.suggest("range:");
             }
         }
-        return builder.buildFuture();
+        return subBuilder.buildFuture();
     }
 
     // Store last query for each player (UUID -> QueryContext)
@@ -94,19 +126,21 @@ public class MineTracerCommand {
         String userFilter = null;
         String timeArg = null;
         int range = 100;
-        if (arg.contains("user:")) {
-            int idx = arg.indexOf("user:");
-            userFilter = arg.substring(idx + 5).split(" ")[0];
-            arg = arg.replace("user:" + userFilter, "").trim();
-        }
-        if (arg.contains("time:")) {
-            int idx = arg.indexOf("time:");
-            int end = arg.indexOf(' ', idx);
-            timeArg = end == -1 ? arg.substring(idx + 5) : arg.substring(idx + 5, end);
-            arg = arg.replace("time:" + timeArg, "").trim();
-        }
-        if (arg.startsWith("range:")) {
-            range = Integer.parseInt(arg.substring("range:".length()).split(" ")[0]);
+        boolean showInventory = false;
+        String actionFilter = null;
+        // Accept time:, range:, user:, action: anywhere in the string
+        for (String part : arg.split(" ")) {
+            if (part.startsWith("user:")) {
+                userFilter = part.substring(5);
+            } else if (part.startsWith("time:")) {
+                timeArg = part.substring(5);
+            } else if (part.startsWith("range:")) {
+                try { range = Integer.parseInt(part.substring(6)); } catch (Exception ignored) {}
+            } else if (part.startsWith("action:")) {
+                String act = part.substring(7).toLowerCase();
+                if (act.equals("inventory")) showInventory = true;
+                else actionFilter = act;
+            }
         }
         BlockPos playerPos = source.getPlayer().getBlockPos();
         Instant cutoff = null;
@@ -115,9 +149,9 @@ public class MineTracerCommand {
             cutoff = Instant.now().minusSeconds(seconds);
         }
         // Gather all logs
-        var blockLogs = LogStorage.getBlockLogsInRange(playerPos, range, userFilter);
-        var signLogs = LogStorage.getSignLogsInRange(playerPos, range, userFilter);
-        var containerLogs = LogStorage.getLogsInRange(playerPos, range);
+        List<LogStorage.BlockLogEntry> blockLogs = LogStorage.getBlockLogsInRange(playerPos, range, userFilter);
+        List<LogStorage.SignLogEntry> signLogs = LogStorage.getSignLogsInRange(playerPos, range, userFilter);
+        List<LogStorage.LogEntry> containerLogs = LogStorage.getLogsInRange(playerPos, range);
         if (userFilter != null) {
             final String userFilterFinal = userFilter;
             containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
@@ -129,11 +163,20 @@ public class MineTracerCommand {
             signLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
             containerLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
         }
+        // Filter out inventory logs unless action:inventory is present
+        if (!showInventory) {
+            containerLogs.removeIf(entry -> "inventory".equals(entry.action));
+        }
+        // Filter by action if specified
+        if (actionFilter != null) {
+            final String actionFilterFinal = actionFilter;
+            containerLogs.removeIf(entry -> !entry.action.equalsIgnoreCase(actionFilterFinal));
+        }
         // Group by position
         java.util.Map<BlockPos, java.util.List<Object>> grouped = new java.util.HashMap<>();
-        for (var entry : blockLogs) grouped.computeIfAbsent(entry.pos, k -> new java.util.ArrayList<>()).add(entry);
-        for (var entry : signLogs) grouped.computeIfAbsent(entry.pos, k -> new java.util.ArrayList<>()).add(entry);
-        for (var entry : containerLogs) grouped.computeIfAbsent(entry.pos, k -> new java.util.ArrayList<>()).add(entry);
+        for (LogStorage.BlockLogEntry entry : blockLogs) grouped.computeIfAbsent(entry.pos, k -> new java.util.ArrayList<>()).add(entry);
+        for (LogStorage.SignLogEntry entry : signLogs) grouped.computeIfAbsent(entry.pos, k -> new java.util.ArrayList<>()).add(entry);
+        for (LogStorage.LogEntry entry : containerLogs) grouped.computeIfAbsent(entry.pos, k -> new java.util.ArrayList<>()).add(entry);
         java.util.List<java.util.Map.Entry<BlockPos, java.util.List<Object>>> groupedList = new java.util.ArrayList<>(grouped.entrySet());
         // Sort by most recent event in each group
         groupedList.sort((a, b) -> {
@@ -171,10 +214,10 @@ public class MineTracerCommand {
         }
         source.sendFeedback(() -> Text.literal("----- MineTracer Lookup Results -----").formatted(Formatting.AQUA), false);
         for (int i = start; i < end; i++) {
-            var pos = groupedList.get(i).getKey();
+            BlockPos pos = groupedList.get(i).getKey();
             String header = "(x" + pos.getX() + "/y" + pos.getY() + "/z" + pos.getZ() + ")";
             source.sendFeedback(() -> Text.literal(header).formatted(Formatting.DARK_AQUA), false);
-            var events = groupedList.get(i).getValue();
+            List<Object> events = groupedList.get(i).getValue();
             events.sort((a, b) -> {
                 Instant ta = a instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)a).timestamp :
                               a instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)a).timestamp :
@@ -184,7 +227,7 @@ public class MineTracerCommand {
                               ((LogStorage.LogEntry)b).timestamp;
                 return tb.compareTo(ta);
             });
-            for (var entry : events) {
+            for (Object entry : events) {
                 Text msg;
                 String timeAgo = getTimeAgo(
                     entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)entry).timestamp :
@@ -192,22 +235,67 @@ public class MineTracerCommand {
                     ((LogStorage.LogEntry)entry).timestamp
                 );
                 if (entry instanceof LogStorage.BlockLogEntry be) {
+                    String actionStr = be.action;
+                    Formatting color;
+                    if ("broke".equals(actionStr)) {
+                        actionStr = "broke block";
+                        color = Formatting.RED;
+                    } else if ("place".equals(actionStr) || "placed".equals(actionStr)) {
+                        actionStr = "placed block";
+                        color = Formatting.GREEN;
+                    } else {
+                        color = Formatting.GRAY;
+                    }
                     msg = Text.literal(timeAgo + " ago - ")
                         .append(Text.literal(be.playerName).formatted(Formatting.AQUA))
-                        .append(Text.literal(" " + (be.action.equals("remove") ? "removed" : "placed") + " ").formatted(be.action.equals("remove") ? Formatting.RED : Formatting.GREEN))
+                        .append(Text.literal(" " + actionStr + " ").formatted(color))
                         .append(Text.literal("#" + be.blockId).formatted(Formatting.YELLOW))
                         .append(Text.literal(" (" + getBlockName(be.blockId) + ").").formatted(Formatting.GRAY));
                 } else if (entry instanceof LogStorage.SignLogEntry se) {
+                    // Try to parse previous and new message from se.text or se.nbt
+                    String prevMsg = null;
+                    String newMsg = null;
+                    // If nbt contains both, try to extract them
+                    if (se.nbt != null && se.nbt.contains("previous") && se.nbt.contains("new")) {
+                        // Example: {previous:"old text",new:"new text"}
+                        String nbt = se.nbt;
+                        int prevIdx = nbt.indexOf("previous");
+                        int newIdx = nbt.indexOf("new");
+                        if (prevIdx != -1 && newIdx != -1) {
+                            int prevStart = nbt.indexOf('"', prevIdx + 8) + 1;
+                            int prevEnd = nbt.indexOf('"', prevStart);
+                            int newStart = nbt.indexOf('"', newIdx + 3) + 1;
+                            int newEnd = nbt.indexOf('"', newStart);
+                            if (prevStart > 0 && prevEnd > prevStart) prevMsg = nbt.substring(prevStart, prevEnd);
+                            if (newStart > 0 && newEnd > newStart) newMsg = nbt.substring(newStart, newEnd);
+                        }
+                    }
+                    if (prevMsg == null) prevMsg = "(unknown)";
+                    if (newMsg == null) newMsg = se.text;
                     msg = Text.literal(timeAgo + " ago - ")
                         .append(Text.literal(se.playerName).formatted(Formatting.AQUA))
-                        .append(Text.literal(" " + (se.action.equals("remove") ? "removed" : se.action.equals("edit") ? "edited" : "placed") + " sign: ").formatted(se.action.equals("remove") ? Formatting.RED : se.action.equals("edit") ? Formatting.YELLOW : Formatting.GREEN))
-                        .append(Text.literal(se.text).formatted(Formatting.GRAY));
+                        .append(Text.literal(" edited sign: ").formatted(Formatting.YELLOW))
+                        .append(Text.literal("[before] ").formatted(Formatting.GRAY))
+                        .append(Text.literal(prevMsg).formatted(Formatting.RED))
+                        .append(Text.literal(" [after] ").formatted(Formatting.GRAY))
+                        .append(Text.literal(newMsg).formatted(Formatting.GREEN));
                 } else if (entry instanceof LogStorage.LogEntry ce) {
+                    String desc;
+                    String containerName = "container";
+                    String itemStr = (ce.stack.getCount() > 1 ? "#" + ce.stack.getCount() + " " : "") + ce.stack.getName().getString();
+                    if ("deposited".equals(ce.action)) {
+                        desc = "deposited " + itemStr + " into " + containerName;
+                    } else if ("withdrew".equals(ce.action)) {
+                        desc = "withdrew " + itemStr + " from " + containerName;
+                    } else if ("inventory".equals(ce.action)) {
+                        desc = "inventory transaction: " + itemStr;
+                    } else {
+                        desc = ce.action;
+                    }
+                    Formatting color = "withdrew".equals(ce.action) ? Formatting.RED : "deposited".equals(ce.action) ? Formatting.GREEN : Formatting.GRAY;
                     msg = Text.literal(timeAgo + " ago - ")
                         .append(Text.literal(ce.playerName).formatted(Formatting.AQUA))
-                        .append(Text.literal(" " + (ce.action.equals("remove") ? "removed" : "inserted") + " ").formatted(ce.action.equals("remove") ? Formatting.RED : Formatting.GREEN))
-                        .append(Text.literal(ce.stack.getCount() > 1 ? "#" + ce.stack.getCount() + " " : ""))
-                        .append(Text.literal(ce.stack.getName().getString()).formatted(Formatting.YELLOW))
+                        .append(Text.literal(" " + desc).formatted(color))
                         .append(Text.literal(".").formatted(Formatting.GRAY));
                 } else {
                     msg = Text.literal("[?] Unknown log entry");
@@ -222,7 +310,7 @@ public class MineTracerCommand {
 
     private static Instant getMostRecentTimestamp(java.util.List<Object> events) {
         Instant mostRecent = Instant.EPOCH;
-        for (var entry : events) {
+        for (Object entry : events) {
             Instant t = entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)entry).timestamp :
                         entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)entry).timestamp :
                         ((LogStorage.LogEntry)entry).timestamp;
@@ -256,77 +344,6 @@ public class MineTracerCommand {
         }
     }
 
-    // Example for lookupBlocks feedback formatting
-    public static int lookupBlocks(CommandContext<ServerCommandSource> ctx) {
-        String arg = StringArgumentType.getString(ctx, "arg");
-        ServerCommandSource source = ctx.getSource();
-        String userFilter = null;
-        String timeArg = null;
-        if (arg.contains("user:")) {
-            int idx = arg.indexOf("user:");
-            userFilter = arg.substring(idx + 5).split(" ")[0];
-            arg = arg.replace("user:" + userFilter, "").trim();
-        }
-        if (arg.contains("time:")) {
-            int idx = arg.indexOf("time:");
-            int end = arg.indexOf(' ', idx);
-            timeArg = end == -1 ? arg.substring(idx + 5) : arg.substring(idx + 5, end);
-            arg = arg.replace("time:" + timeArg, "").trim();
-        }
-        int range = 100;
-        if (arg.startsWith("range:")) {
-            range = Integer.parseInt(arg.substring("range:".length()).split(" ")[0]);
-        }
-        BlockPos playerPos = source.getPlayer().getBlockPos();
-        var logs = LogStorage.getBlockLogsInRange(playerPos, range, userFilter);
-        if (timeArg != null) {
-            long seconds = parseTimeArg(timeArg);
-            Instant cutoff = Instant.now().minusSeconds(seconds);
-            logs.removeIf(entry -> entry.timestamp.isBefore(cutoff));
-        }
-        if (logs.isEmpty()) {
-            source.sendFeedback(() -> Text.literal("No block logs found.").formatted(Formatting.GRAY), false);
-        } else {
-            for (var entry : logs) {
-                Text msg = Text.literal("[" + entry.timestamp + "] ")
-                    .formatted(Formatting.DARK_GRAY)
-                    .append(Text.literal(entry.action + " ").formatted(entry.action.equals("remove") ? Formatting.RED : Formatting.GREEN))
-                    .append(Text.literal(entry.playerName + " ").formatted(Formatting.AQUA))
-                    .append(Text.literal(entry.blockId + " ").formatted(Formatting.YELLOW))
-                    .append(Text.literal("at "))
-                    .append(Text.literal(entry.pos.getX() + "," + entry.pos.getY() + "," + entry.pos.getZ())
-                        .styled(style -> style.withColor(Formatting.GOLD).withClickEvent(new net.minecraft.text.ClickEvent(net.minecraft.text.ClickEvent.Action.RUN_COMMAND, "/tp " + entry.pos.getX() + " " + entry.pos.getY() + " " + entry.pos.getZ()))
-                        .withHoverEvent(new net.minecraft.text.HoverEvent(net.minecraft.text.HoverEvent.Action.SHOW_TEXT, Text.literal("Click to teleport"))))) ;
-                source.sendFeedback(() -> msg, false);
-            }
-        }
-        return Command.SINGLE_SUCCESS;
-    }
-    public static int lookupSigns(CommandContext<ServerCommandSource> ctx) {
-        String arg = StringArgumentType.getString(ctx, "arg");
-        ServerCommandSource source = ctx.getSource();
-        String userFilter = null;
-        if (arg.contains("user:")) {
-            int idx = arg.indexOf("user:");
-            userFilter = arg.substring(idx + 5).split(" ")[0];
-            arg = arg.replace("user:" + userFilter, "").trim();
-        }
-        int range = 100;
-        if (arg.startsWith("range:")) {
-            range = Integer.parseInt(arg.substring("range:".length()).split(" ")[0]);
-        }
-        BlockPos playerPos = source.getPlayer().getBlockPos();
-        var logs = LogStorage.getSignLogsInRange(playerPos, range, userFilter);
-        if (logs.isEmpty()) {
-            source.sendFeedback(() -> Text.literal("No sign logs found."), false);
-        } else {
-            for (var entry : logs) {
-                source.sendFeedback(() -> Text.literal(entry.timestamp + " " + entry.action + " " + entry.playerName + " at " + entry.pos.getX() + "," + entry.pos.getY() + "," + entry.pos.getZ() + ": " + entry.text), false);
-            }
-        }
-        return Command.SINGLE_SUCCESS;
-    }
-
     private static int restore(CommandContext<ServerCommandSource> ctx) {
         String arg = StringArgumentType.getString(ctx, "arg");
         ServerCommandSource source = ctx.getSource();
@@ -337,6 +354,7 @@ public class MineTracerCommand {
             arg = arg.replace("user:" + userFilter, "").trim();
         }
         int restored = 0;
+        int blockRestored = 0;
         if (arg.startsWith("range:")) {
             final int range = Integer.parseInt(arg.substring("range:".length()).split(" ")[0]);
             BlockPos playerPos = source.getPlayer().getBlockPos();
@@ -350,8 +368,33 @@ public class MineTracerCommand {
             for (LogStorage.LogEntry entry : logs) {
                 byPos.computeIfAbsent(entry.pos, k -> new java.util.ArrayList<>()).add(entry);
             }
-            for (var e : byPos.entrySet()) {
+            for (Map.Entry<BlockPos, java.util.List<LogStorage.LogEntry>> e : byPos.entrySet()) {
                 restored += restoreToContainer(source, e.getKey(), e.getValue());
+            }
+            // --- Block restore logic ---
+            java.util.List<LogStorage.BlockLogEntry> blockLogs = LogStorage.getBlockLogsInRange(playerPos, range, userFilter);
+            for (LogStorage.BlockLogEntry entry : blockLogs) {
+                if ("broke".equals(entry.action)) {
+                    // Restore block that was broken
+                    try {
+                        net.minecraft.block.Block block = net.minecraft.registry.Registries.BLOCK.get(new net.minecraft.util.Identifier(entry.blockId));
+                        net.minecraft.block.BlockState state = block.getDefaultState();
+                        if (entry.nbt != null && !entry.nbt.isEmpty()) {
+                            // Try to parse NBT for block entity
+                            net.minecraft.nbt.NbtCompound nbt = net.minecraft.nbt.StringNbtReader.parse(entry.nbt);
+                            source.getWorld().setBlockState(entry.pos, state);
+                            net.minecraft.block.entity.BlockEntity be = source.getWorld().getBlockEntity(entry.pos);
+                            if (be != null) be.readNbt(nbt);
+                        } else {
+                            source.getWorld().setBlockState(entry.pos, state);
+                        }
+                        blockRestored++;
+                    } catch (Exception e) { e.printStackTrace(); }
+                } else if ("place".equals(entry.action)) {
+                    // Undo block placement (set to air)
+                    source.getWorld().setBlockState(entry.pos, net.minecraft.block.Blocks.AIR.getDefaultState());
+                    blockRestored++;
+                }
             }
         } else if (userFilter != null) {
             final String userFilterFinal = userFilter;
@@ -361,29 +404,50 @@ public class MineTracerCommand {
             for (LogStorage.LogEntry entry : logs) {
                 byPos.computeIfAbsent(entry.pos, k -> new java.util.ArrayList<>()).add(entry);
             }
-            for (var e : byPos.entrySet()) {
+            for (Map.Entry<BlockPos, java.util.List<LogStorage.LogEntry>> e : byPos.entrySet()) {
                 restored += restoreToContainer(source, e.getKey(), e.getValue());
+            }
+            // --- Block restore logic for user ---
+            java.util.List<LogStorage.BlockLogEntry> blockLogs = LogStorage.getBlockLogsInRange(source.getPlayer().getBlockPos(), 100, userFilter);
+            for (LogStorage.BlockLogEntry entry : blockLogs) {
+                if ("broke".equals(entry.action)) {
+                    try {
+                        net.minecraft.block.Block block = net.minecraft.registry.Registries.BLOCK.get(new net.minecraft.util.Identifier(entry.blockId));
+                        net.minecraft.block.BlockState state = block.getDefaultState();
+                        if (entry.nbt != null && !entry.nbt.isEmpty()) {
+                            net.minecraft.nbt.NbtCompound nbt = net.minecraft.nbt.StringNbtReader.parse(entry.nbt);
+                            source.getWorld().setBlockState(entry.pos, state);
+                            net.minecraft.block.entity.BlockEntity be = source.getWorld().getBlockEntity(entry.pos);
+                            if (be != null) be.readNbt(nbt);
+                        } else {
+                            source.getWorld().setBlockState(entry.pos, state);
+                        }
+                        blockRestored++;
+                    } catch (Exception e) { e.printStackTrace(); }
+                } else if ("place".equals(entry.action)) {
+                    source.getWorld().setBlockState(entry.pos, net.minecraft.block.Blocks.AIR.getDefaultState());
+                    blockRestored++;
+                }
             }
         } else {
             source.sendFeedback(() -> Text.literal("Usage: /flowframe minetracer restore range:<blocks> user:<name> or /flowframe minetracer restore user:<name>"), false);
             return Command.SINGLE_SUCCESS;
         }
-        if (restored > 0) {
-            int count = restored;
-            source.sendFeedback(() -> Text.literal("Restored " + count + " items to containers."), false);
+        if (restored > 0 || blockRestored > 0) {
+            int count = restored + blockRestored;
+            source.sendFeedback(() -> Text.literal("Restored " + count + " items/blocks."), false);
         } else {
-            source.sendFeedback(() -> Text.literal("No items to restore or containers are full."), false);
+            source.sendFeedback(() -> Text.literal("No items or blocks to restore."), false);
         }
         return Command.SINGLE_SUCCESS;
     }
 
     private static int restoreToContainer(ServerCommandSource source, BlockPos pos, java.util.List<LogStorage.LogEntry> logs) {
-        var world = source.getWorld();
-        var blockEntity = world.getBlockEntity(pos);
-        if (!(blockEntity instanceof net.minecraft.inventory.Inventory)) {
+        Object blockEntity = source.getWorld().getBlockEntity(pos);
+        if (!(blockEntity instanceof Inventory)) {
             return 0;
         }
-        net.minecraft.inventory.Inventory inv = (net.minecraft.inventory.Inventory) blockEntity;
+        Inventory inv = (Inventory) blockEntity;
         int restored = 0;
         for (LogStorage.LogEntry entry : logs) {
             if ("remove".equals(entry.action)) {

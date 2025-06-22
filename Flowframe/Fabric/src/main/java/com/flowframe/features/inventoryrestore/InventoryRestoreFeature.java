@@ -30,62 +30,61 @@ import com.mojang.brigadier.context.CommandContext;
 
 public class InventoryRestoreFeature {
     private static final Map<UUID, List<NbtCompound>> playerBackups = new HashMap<>();
-    private static final int MAX_BACKUPS = 10;
-    private static final Path BACKUP_DIR = Path.of("config", "flowframe");
+    private static final int MAX_BACKUPS = 20;
+    private static final Path BACKUP_DIR = Path.of("config", "flowframe", "inventorybackups");
 
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("flowframe")
-                .then(CommandManager.literal("inventoryrestore")
-                    .requires(source -> Permissions.check(source, "flowframe.feature.inventoryrestore.view") || source.hasPermissionLevel(2))
-                    .then(CommandManager.literal("view")
-                        .requires(source -> Permissions.check(source, "flowframe.feature.inventoryrestore.view") || source.hasPermissionLevel(2))
-                        .then(CommandManager.argument("player", StringArgumentType.word())
-                            .executes(InventoryRestoreFeature::viewBackups)
-                        )
-                    )
-                    .then(CommandManager.argument("player", StringArgumentType.word())
-                        .executes(InventoryRestoreFeature::viewBackups)
-                    )
-                    .then(CommandManager.literal("save")
-                        .requires(source -> Permissions.check(source, "flowframe.feature.inventoryrestore.manualbackup") || source.hasPermissionLevel(2))
-                        .then(CommandManager.argument("player", StringArgumentType.word())
-                            .executes(InventoryRestoreFeature::manualBackup)
-                        )
-                    )
-                    .then(CommandManager.literal("restore")
-                        .requires(source -> Permissions.check(source, "flowframe.feature.inventoryrestore.restore") || source.hasPermissionLevel(2))
-                        .then(CommandManager.argument("player", StringArgumentType.word())
-                            .executes(ctx -> restoreBackup(ctx, 1))
-                            .then(CommandManager.argument("backup", StringArgumentType.word())
-                                .executes(ctx -> {
-                                    String backupStr = StringArgumentType.getString(ctx, "backup");
-                                    int backupNum = 1;
-                                    try {
-                                        backupNum = Integer.parseInt(backupStr);
-                                    } catch (NumberFormatException ignored) {}
-                                    return restoreBackup(ctx, backupNum);
-                                })
-                            )
-                        )
-                    )
-                    .then(CommandManager.literal("cleanup")
-                        .requires(source -> Permissions.check(source, "flowframe.feature.inventoryrestore.cleanup") || source.hasPermissionLevel(2))
-                        .executes(InventoryRestoreFeature::cleanupBackups)
-                    )
-                )
-            );
+                    .then(CommandManager.literal("inventoryrestore")
+                            .requires(source -> Permissions.check(source, "flowframe.feature.inventoryrestore.view")
+                                    || source.hasPermissionLevel(2))
+                            .then(CommandManager.literal("view")
+                                    .requires(source -> Permissions.check(source,
+                                            "flowframe.feature.inventoryrestore.view") || source.hasPermissionLevel(2))
+                                    .then(CommandManager.argument("player", StringArgumentType.word())
+                                            .executes(InventoryRestoreFeature::viewBackups)))
+                            .then(CommandManager.argument("player", StringArgumentType.word())
+                                    .executes(InventoryRestoreFeature::viewBackups))
+                            .then(CommandManager.literal("save")
+                                    .requires(source -> Permissions.check(source,
+                                            "flowframe.feature.inventoryrestore.manualbackup")
+                                            || source.hasPermissionLevel(2))
+                                    .then(CommandManager.argument("player", StringArgumentType.word())
+                                            .executes(InventoryRestoreFeature::manualBackup)))
+                            .then(CommandManager.literal("restore")
+                                    .requires(source -> Permissions.check(source,
+                                            "flowframe.feature.inventoryrestore.restore")
+                                            || source.hasPermissionLevel(2))
+                                    .then(CommandManager.argument("player", StringArgumentType.word())
+                                            .executes(ctx -> restoreBackup(ctx, 1))
+                                            .then(CommandManager.argument("backup", StringArgumentType.word())
+                                                    .executes(ctx -> {
+                                                        String backupStr = StringArgumentType.getString(ctx, "backup");
+                                                        int backupNum = 1;
+                                                        try {
+                                                            backupNum = Integer.parseInt(backupStr);
+                                                        } catch (NumberFormatException ignored) {
+                                                        }
+                                                        return restoreBackup(ctx, backupNum);
+                                                    }))))
+                            .then(CommandManager.literal("cleanup")
+                                    .requires(source -> Permissions.check(source,
+                                            "flowframe.feature.inventoryrestore.cleanup")
+                                            || source.hasPermissionLevel(2))
+                                    .executes(InventoryRestoreFeature::cleanupBackups))));
         });
         // Register event listeners for backup triggers
         ServerLifecycleEvents.SERVER_STARTED.register(server -> loadBackups());
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> saveBackups());
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> backupPlayerInventory(handler.getPlayer()));
+        //ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> backupPlayerInventory(handler.getPlayer()));
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> backupPlayerInventory(handler.getPlayer()));
-        // Player death: fallback to tick-based check for MVP
+        // Player death: fallback to tick-based check for MVP (disabled by default)
         // (Ideally, use a mixin or a custom event for onDeath)
     }
 
-    // Trinkets support is now optional and uses reflection to avoid compile errors if the mod is not present.
+    // Trinkets support is now optional and uses reflection to avoid compile errors
+    // if the mod is not present.
     private static void backupPlayerInventory(ServerPlayerEntity player) {
         NbtCompound backup = new NbtCompound();
         NbtList items = new NbtList();
@@ -104,28 +103,33 @@ public class InventoryRestoreFeature {
         NbtCompound trinkets = new NbtCompound();
         try {
             Class<?> trinketsApi = Class.forName("dev.emi.trinkets.api.TrinketsApi");
-            java.lang.reflect.Method getTrinketComponent = trinketsApi.getMethod("getTrinketComponent", ServerPlayerEntity.class);
+            java.lang.reflect.Method getTrinketComponent = trinketsApi.getMethod("getTrinketComponent",
+                    ServerPlayerEntity.class);
             java.util.Optional<?> comp = (java.util.Optional<?>) getTrinketComponent.invoke(null, player);
             if (comp.isPresent()) {
                 Object trinketComponent = comp.get();
-                java.lang.reflect.Method writeToNbt = trinketComponent.getClass().getMethod("writeToNbt", NbtCompound.class);
+                java.lang.reflect.Method writeToNbt = trinketComponent.getClass().getMethod("writeToNbt",
+                        NbtCompound.class);
                 writeToNbt.invoke(trinketComponent, trinkets);
                 // Debug: print trinket NBT to server log
                 System.out.println("[Flowframe] Trinket NBT for backup: " + trinkets);
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
         backup.put("trinkets", trinkets);
         UUID uuid = player.getUuid();
         playerBackups.computeIfAbsent(uuid, k -> new LinkedList<>());
         List<NbtCompound> backups = playerBackups.get(uuid);
         backups.add(0, backup);
-        while (backups.size() > MAX_BACKUPS) backups.remove(backups.size() - 1);
+        while (backups.size() > MAX_BACKUPS)
+            backups.remove(backups.size() - 1);
         savePlayerBackups(uuid, backups); // Save after each backup
     }
 
     private static void loadBackups() {
         try {
-            if (!Files.exists(BACKUP_DIR)) Files.createDirectories(BACKUP_DIR);
+            if (!Files.exists(BACKUP_DIR))
+                Files.createDirectories(BACKUP_DIR);
             playerBackups.clear();
             Files.list(BACKUP_DIR).filter(p -> p.toString().endsWith(".json")).forEach(path -> {
                 try {
@@ -135,27 +139,33 @@ public class InventoryRestoreFeature {
                     String uuidStr = fileName.substring(0, fileName.length() - 5); // remove .json
                     UUID uuid = UUID.fromString(uuidStr);
                     playerBackups.put(uuid, backups);
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                }
             });
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 
     private static void saveBackups() {
         try {
-            if (!Files.exists(BACKUP_DIR)) Files.createDirectories(BACKUP_DIR);
+            if (!Files.exists(BACKUP_DIR))
+                Files.createDirectories(BACKUP_DIR);
             for (Map.Entry<UUID, List<NbtCompound>> entry : playerBackups.entrySet()) {
                 savePlayerBackups(entry.getKey(), entry.getValue());
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 
     private static void savePlayerBackups(UUID uuid, List<NbtCompound> backups) {
         try {
-            if (!Files.exists(BACKUP_DIR)) Files.createDirectories(BACKUP_DIR);
+            if (!Files.exists(BACKUP_DIR))
+                Files.createDirectories(BACKUP_DIR);
             String json = NbtBackupUtil.serializeBackups(backups);
             Path file = BACKUP_DIR.resolve(uuid.toString() + ".json");
             Files.writeString(file, json, StandardCharsets.UTF_8);
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 
     private static int viewBackups(CommandContext<ServerCommandSource> context) {
@@ -169,7 +179,8 @@ public class InventoryRestoreFeature {
         UUID uuid = player.getUuid();
         List<NbtCompound> backups = playerBackups.get(uuid);
         if (backups == null || backups.isEmpty()) {
-            context.getSource().sendFeedback(() -> Text.literal("[Flowframe] No backups found for " + playerName), false);
+            context.getSource().sendFeedback(() -> Text.literal("[Flowframe] No backups found for " + playerName),
+                    false);
             return Command.SINGLE_SUCCESS;
         }
         context.getSource().sendFeedback(() -> Text.literal("[Flowframe] Backups for " + playerName + ":"), false);
@@ -192,7 +203,8 @@ public class InventoryRestoreFeature {
             return 0;
         }
         backupPlayerInventory(player);
-        context.getSource().sendFeedback(() -> Text.literal("[Flowframe] Manual backup created for " + playerName), false);
+        context.getSource().sendFeedback(() -> Text.literal("[Flowframe] Manual backup created for " + playerName),
+                false);
         return Command.SINGLE_SUCCESS;
     }
 
@@ -211,7 +223,8 @@ public class InventoryRestoreFeature {
             return 0;
         }
         if (backupNum < 1 || backupNum > backups.size()) {
-            context.getSource().sendError(Text.literal("[Flowframe] Invalid backup number. Use /flowframe inventoryrestore view <player> to see available backups."));
+            context.getSource().sendError(Text.literal(
+                    "[Flowframe] Invalid backup number. Use /flowframe inventoryrestore view <player> to see available backups."));
             return 0;
         }
         NbtCompound backup = backups.get(backupNum - 1);
@@ -223,24 +236,30 @@ public class InventoryRestoreFeature {
             ItemStack stack = ItemStack.fromNbt(itemNbt);
             player.getInventory().setStack(slot, stack);
         }
-        // Trinket support: restore trinket slots if Trinkets mod is present (reflection)
+        // Trinket support: restore trinket slots if Trinkets mod is present
+        // (reflection)
         NbtCompound trinkets = backup.getCompound("trinkets");
         try {
             Class<?> trinketsApi = Class.forName("dev.emi.trinkets.api.TrinketsApi");
-            java.lang.reflect.Method getTrinketComponent = trinketsApi.getMethod("getTrinketComponent", ServerPlayerEntity.class);
+            java.lang.reflect.Method getTrinketComponent = trinketsApi.getMethod("getTrinketComponent",
+                    ServerPlayerEntity.class);
             java.util.Optional<?> comp = (java.util.Optional<?>) getTrinketComponent.invoke(null, player);
             if (comp.isPresent()) {
                 Object trinketComponent = comp.get();
                 if (!trinkets.isEmpty()) {
-                    java.lang.reflect.Method readFromNbt = trinketComponent.getClass().getMethod("readFromNbt", NbtCompound.class);
+                    java.lang.reflect.Method readFromNbt = trinketComponent.getClass().getMethod("readFromNbt",
+                            NbtCompound.class);
                     readFromNbt.invoke(trinketComponent, trinkets);
                 } else {
-                    context.getSource().sendFeedback(() -> Text.literal("[Flowframe] No trinket data found in backup for " + playerName), false);
+                    context.getSource().sendFeedback(
+                            () -> Text.literal("[Flowframe] No trinket data found in backup for " + playerName), false);
                 }
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
+        }
         player.currentScreenHandler.sendContentUpdates();
-        context.getSource().sendFeedback(() -> Text.literal("[Flowframe] Restored backup #" + backupNum + " for " + playerName), false);
+        context.getSource().sendFeedback(
+                () -> Text.literal("[Flowframe] Restored backup #" + backupNum + " for " + playerName), false);
         return Command.SINGLE_SUCCESS;
     }
 
@@ -261,7 +280,8 @@ public class InventoryRestoreFeature {
                 totalPlayers++;
             }
         }
-        String msg = "[Flowframe] Cleanup complete: " + totalDeleted + " old backups removed for " + totalPlayers + " player(s).";
+        String msg = "[Flowframe] Cleanup complete: " + totalDeleted + " old backups removed for " + totalPlayers
+                + " player(s).";
         context.getSource().sendFeedback(() -> Text.literal(msg), false);
         return Command.SINGLE_SUCCESS;
     }

@@ -12,7 +12,7 @@ import java.io.IOException;
 
 public class EndToggleFeature {
     private static boolean endEnabled = true;
-    private static final Path SAVE_PATH = Path.of("config", "endtoggle.txt");
+    private static final Path SAVE_PATH = Path.of("config", "flowfrane", "endtoggle.txt");
 
     public static void register() {
         loadState();

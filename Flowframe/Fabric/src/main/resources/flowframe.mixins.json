@@ -21,8 +21,9 @@
     "MixinLivingEntity_TipsyDuration",
     "MixinPotionItem",
     "MixinScreenHandler",
+    "MixinServerPlayerInteractionManager",
     "MixinSignBlockEntity",
-    "MixinServerPlayerInteractionManager"
+    "MixinPlayerEntity"
   ],
   "injectors": {
     "defaultRequire": 1

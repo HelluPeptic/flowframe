@@ -3,6 +3,7 @@ package com.flowframe.features.minetracer;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.nbt.NbtCompound;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,7 +12,6 @@ import java.nio.file.Files;
 import java.nio.charset.StandardCharsets;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtHelper;
 
@@ -70,6 +70,56 @@ public class LogStorage {
     private static final Path BLOCK_LOG_DIR = Path.of("config", "flowframe", "minetracer", "blocks");
     private static final Path SIGN_LOG_DIR = Path.of("config", "flowframe", "minetracer", "signs");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+
+    static {
+        // Load logs from disk on startup
+        try {
+            java.nio.file.Files.createDirectories(LOG_DIR);
+            java.util.stream.Stream<java.nio.file.Path> files = java.nio.file.Files.list(LOG_DIR);
+            files.filter(f -> f.getFileName().toString().startsWith("log-") && f.getFileName().toString().endsWith(".json"))
+                .forEach(f -> {
+                    try {
+                        java.util.List<String> lines = java.nio.file.Files.readAllLines(f, java.nio.charset.StandardCharsets.UTF_8);
+                        for (String line : lines) {
+                            LogEntryJson json = GSON.fromJson(line, LogEntryJson.class);
+                            String[] posParts = json.pos.split(",");
+                            BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]), Integer.parseInt(posParts[2]));
+                            try {
+                                net.minecraft.nbt.NbtCompound nbt = net.minecraft.nbt.StringNbtReader.parse(json.itemNbt);
+                                ItemStack stack = ItemStack.fromNbt(nbt);
+                                logs.add(new LogEntry(json.action, json.playerName, pos, stack, java.time.Instant.parse(json.timestamp)));
+                            } catch (Exception nbtEx) { nbtEx.printStackTrace(); }
+                        }
+                    } catch (Exception e) { e.printStackTrace(); }
+                });
+            // Load block logs
+            java.nio.file.Files.createDirectories(BLOCK_LOG_DIR);
+            java.util.stream.Stream<java.nio.file.Path> blockFiles = java.nio.file.Files.list(BLOCK_LOG_DIR);
+            blockFiles.filter(f -> f.getFileName().toString().startsWith("block-") && f.getFileName().toString().endsWith(".json"))
+                .forEach(f -> {
+                    try {
+                        java.util.List<String> lines = java.nio.file.Files.readAllLines(f, java.nio.charset.StandardCharsets.UTF_8);
+                        for (String line : lines) {
+                            BlockLogEntry entry = GSON.fromJson(line, BlockLogEntry.class);
+                            blockLogs.add(entry);
+                        }
+                    } catch (Exception e) { e.printStackTrace(); }
+                });
+            // Load sign logs
+            java.nio.file.Files.createDirectories(SIGN_LOG_DIR);
+            java.util.stream.Stream<java.nio.file.Path> signFiles = java.nio.file.Files.list(SIGN_LOG_DIR);
+            signFiles.filter(f -> f.getFileName().toString().startsWith("sign-") && f.getFileName().toString().endsWith(".json"))
+                .forEach(f -> {
+                    try {
+                        java.util.List<String> lines = java.nio.file.Files.readAllLines(f, java.nio.charset.StandardCharsets.UTF_8);
+                        for (String line : lines) {
+                            SignLogEntry entry = GSON.fromJson(line, SignLogEntry.class);
+                            signLogs.add(entry);
+                        }
+                    } catch (Exception e) { e.printStackTrace(); }
+                });
+        } catch (Exception e) { e.printStackTrace(); }
+    }
 
     public static void logContainerAction(String action, PlayerEntity player, BlockPos pos, ItemStack stack) {
         logs.add(new LogEntry(action, player.getName().getString(), pos, stack, Instant.now()));
@@ -187,5 +237,10 @@ public class LogStorage {
             }
         }
         return result;
+    }
+    public static void logInventoryAction(String action, PlayerEntity player, ItemStack stack) {
+        // Use BlockPos.ORIGIN (0,0,0) to mark inventory logs
+        logs.add(new LogEntry(action, player.getName().getString(), BlockPos.ORIGIN, stack, Instant.now()));
+        saveLogToFile(logs.get(logs.size() - 1));
     }
 }

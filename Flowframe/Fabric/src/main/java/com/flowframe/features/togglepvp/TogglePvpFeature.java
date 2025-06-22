@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 public class TogglePvpFeature {
     // Tracks players who have PVP OFF (by UUID)
     private static final Set<UUID> pvpDisabled = new HashSet<>();
-    private static final Path SAVE_PATH = Path.of("config", "pvp-disabled.txt");
+    private static final Path SAVE_PATH = Path.of("config", "flowframe", "pvp-disabled.txt");
 
     public static void register() {
         loadDisabledSet();
