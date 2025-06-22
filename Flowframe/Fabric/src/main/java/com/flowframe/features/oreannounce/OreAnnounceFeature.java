@@ -175,8 +175,8 @@ public class OreAnnounceFeature {
 
     private static Path getLogFilePath() {
         String userDir = System.getProperty("user.dir");
-        // Place orelog.txt in the config folder
-        return Path.of(userDir, "config", LOG_FILE);
+        // Place orelog.txt in the config/flowframe folder
+        return Path.of(userDir, "config", "flowframe", LOG_FILE);
     }
 
     private static void logOreBreak(String playerName, String oreName, BlockPos pos, int count) {

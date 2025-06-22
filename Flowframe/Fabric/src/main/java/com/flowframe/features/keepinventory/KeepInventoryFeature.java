@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 public class KeepInventoryFeature {
     // Tracks players who have keep inventory OFF (by UUID)
     private static final Set<UUID> keepInventoryDisabled = new HashSet<>();
-    private static final Path SAVE_PATH = Path.of("config", "keepinv-disabled.txt");
+    private static final Path SAVE_PATH = Path.of("config", "flowframe", "keepinv-disabled.txt");
 
     public static void register() {
         loadDisabledSet();

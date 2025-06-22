@@ -30,8 +30,8 @@ import com.mojang.brigadier.context.CommandContext;
 
 public class InventoryRestoreFeature {
     private static final Map<UUID, List<NbtCompound>> playerBackups = new HashMap<>();
-    private static final int MAX_BACKUPS = 10;
-    private static final Path BACKUP_DIR = Path.of("config", "flowframe");
+    private static final int MAX_BACKUPS = 20;
+    private static final Path BACKUP_DIR = Path.of("config", "flowframe", "inventorybackups");
 
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
@@ -79,9 +79,10 @@ public class InventoryRestoreFeature {
         // Register event listeners for backup triggers
         ServerLifecycleEvents.SERVER_STARTED.register(server -> loadBackups());
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> saveBackups());
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> backupPlayerInventory(handler.getPlayer()));
+        // Only backup on disconnect (leave), not on join or death
+        // ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> backupPlayerInventory(handler.getPlayer()));
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> backupPlayerInventory(handler.getPlayer()));
-        // Player death: fallback to tick-based check for MVP
+        // Player death: fallback to tick-based check for MVP (disabled for now)
         // (Ideally, use a mixin or a custom event for onDeath)
     }
 
