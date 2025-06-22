@@ -19,7 +19,10 @@
     "MixinLivingEntity_RemoveSpelunker",
     "MixinLivingEntity_PotionDuration",
     "MixinLivingEntity_TipsyDuration",
-    "MixinPotionItem"
+    "MixinPotionItem",
+    "MixinScreenHandler",
+    "MixinSignBlockEntity",
+    "MixinServerPlayerInteractionManager"
   ],
   "injectors": {
     "defaultRequire": 1
