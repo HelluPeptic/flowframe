@@ -22,8 +22,12 @@ import net.minecraft.text.Text;
 import java.util.Map;
 import java.util.UUID;
 import java.util.HashMap;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonElement;
+import java.util.ArrayList;
 
-// Handles /flowframe minetracer commands (lookup, restore)
+// Handles /flowframe minetracer commands (lookup, rollback)
 public class MineTracerCommand {
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
@@ -35,10 +39,10 @@ public class MineTracerCommand {
                             .executes(MineTracerCommand::lookup)
                         )
                     )
-                    .then(CommandManager.literal("restore")
+                    .then(CommandManager.literal("rollback")
                         .then(CommandManager.argument("arg", StringArgumentType.greedyString())
                             .suggests(MineTracerCommand::suggestPlayers)
-                            .executes(MineTracerCommand::restore)
+                            .executes(MineTracerCommand::rollback)
                         )
                     )
                     .then(CommandManager.literal("page")
@@ -111,11 +115,19 @@ public class MineTracerCommand {
 
     // Store last query for each player (UUID -> QueryContext)
     private static final Map<UUID, QueryContext> lastQueries = new HashMap<>();
+    private static class FlatLogEntry {
+        public final BlockPos pos;
+        public final Object entry;
+        public FlatLogEntry(BlockPos pos, Object entry) {
+            this.pos = pos;
+            this.entry = entry;
+        }
+    }
     private static class QueryContext {
-        public final java.util.List<java.util.Map.Entry<BlockPos, java.util.List<Object>>> groupedList;
+        public final List<FlatLogEntry> flatList;
         public final int entriesPerPage;
-        public QueryContext(java.util.List<java.util.Map.Entry<BlockPos, java.util.List<Object>>> groupedList, int entriesPerPage) {
-            this.groupedList = groupedList;
+        public QueryContext(List<FlatLogEntry> flatList, int entriesPerPage) {
+            this.flatList = flatList;
             this.entriesPerPage = entriesPerPage;
         }
     }
@@ -171,24 +183,28 @@ public class MineTracerCommand {
         if (actionFilter != null) {
             final String actionFilterFinal = actionFilter;
             containerLogs.removeIf(entry -> !entry.action.equalsIgnoreCase(actionFilterFinal));
+            blockLogs.removeIf(entry -> !entry.action.equalsIgnoreCase(actionFilterFinal));
+            signLogs.removeIf(entry -> !entry.action.equalsIgnoreCase(actionFilterFinal));
         }
-        // Group by position
-        java.util.Map<BlockPos, java.util.List<Object>> grouped = new java.util.HashMap<>();
-        for (LogStorage.BlockLogEntry entry : blockLogs) grouped.computeIfAbsent(entry.pos, k -> new java.util.ArrayList<>()).add(entry);
-        for (LogStorage.SignLogEntry entry : signLogs) grouped.computeIfAbsent(entry.pos, k -> new java.util.ArrayList<>()).add(entry);
-        for (LogStorage.LogEntry entry : containerLogs) grouped.computeIfAbsent(entry.pos, k -> new java.util.ArrayList<>()).add(entry);
-        java.util.List<java.util.Map.Entry<BlockPos, java.util.List<Object>>> groupedList = new java.util.ArrayList<>(grouped.entrySet());
-        // Sort by most recent event in each group
-        groupedList.sort((a, b) -> {
-            Instant ta = getMostRecentTimestamp(a.getValue());
-            Instant tb = getMostRecentTimestamp(b.getValue());
+        // Flatten all logs into a single list with position
+        List<FlatLogEntry> flatList = new ArrayList<>();
+        for (LogStorage.BlockLogEntry entry : blockLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
+        for (LogStorage.SignLogEntry entry : signLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
+        for (LogStorage.LogEntry entry : containerLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
+        // Sort by timestamp descending
+        flatList.sort((a, b) -> {
+            Instant ta = a.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)a.entry).timestamp :
+                        a.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)a.entry).timestamp :
+                        ((LogStorage.LogEntry)a.entry).timestamp;
+            Instant tb = b.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)b.entry).timestamp :
+                        b.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)b.entry).timestamp :
+                        ((LogStorage.LogEntry)b.entry).timestamp;
             return tb.compareTo(ta);
         });
-        int entriesPerPage = 10;
-        // Store this query for paging
-        lastQueries.put(source.getPlayer().getUuid(), new QueryContext(groupedList, entriesPerPage));
+        int entriesPerPage = 5; // Reduced from 10 to 5 for less logs per page
+        lastQueries.put(source.getPlayer().getUuid(), new QueryContext(flatList, entriesPerPage));
         // Show first page
-        return showLookupPage(source, groupedList, 1, entriesPerPage);
+        return showLookupPage(source, flatList, 1, entriesPerPage);
     }
 
     public static int lookupPage(CommandContext<ServerCommandSource> ctx) {
@@ -196,112 +212,142 @@ public class MineTracerCommand {
         ServerCommandSource source = ctx.getSource();
         QueryContext context = lastQueries.get(source.getPlayer().getUuid());
         if (context == null) {
-            source.sendFeedback(() -> Text.literal("No previous lookup found. Use /flowframe minetracer [filters] first.").formatted(Formatting.RED), false);
+            source.sendFeedback(() -> Text.literal("No previous lookup found. Use /flowframe minetracer lookup [filters] first.").formatted(Formatting.RED), false);
             return Command.SINGLE_SUCCESS;
         }
-        return showLookupPage(source, context.groupedList, page, context.entriesPerPage);
+        return showLookupPage(source, context.flatList, page, context.entriesPerPage);
     }
 
-    private static int showLookupPage(ServerCommandSource source, java.util.List<java.util.Map.Entry<BlockPos, java.util.List<Object>>> groupedList, int page, int entriesPerPage) {
-        int totalPages = (int)Math.ceil((double)groupedList.size() / entriesPerPage);
+    private static int showLookupPage(ServerCommandSource source, List<FlatLogEntry> flatList, int page, int entriesPerPage) {
+        int totalPages = (int)Math.ceil((double)flatList.size() / entriesPerPage);
         if (page < 1) page = 1;
         if (page > totalPages) page = totalPages;
         int start = (page - 1) * entriesPerPage;
-        int end = Math.min(start + entriesPerPage, groupedList.size());
-        if (groupedList.isEmpty()) {
+        int end = Math.min(start + entriesPerPage, flatList.size());
+        if (flatList.isEmpty()) {
             source.sendFeedback(() -> Text.literal("No logs found.").formatted(Formatting.GRAY), false);
             return Command.SINGLE_SUCCESS;
         }
         source.sendFeedback(() -> Text.literal("----- MineTracer Lookup Results -----").formatted(Formatting.AQUA), false);
         for (int i = start; i < end; i++) {
-            BlockPos pos = groupedList.get(i).getKey();
+            FlatLogEntry fle = flatList.get(i);
+            BlockPos pos = fle.pos;
+            Object entry = fle.entry;
             String header = "(x" + pos.getX() + "/y" + pos.getY() + "/z" + pos.getZ() + ")";
             source.sendFeedback(() -> Text.literal(header).formatted(Formatting.DARK_AQUA), false);
-            List<Object> events = groupedList.get(i).getValue();
-            events.sort((a, b) -> {
-                Instant ta = a instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)a).timestamp :
-                              a instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)a).timestamp :
-                              ((LogStorage.LogEntry)a).timestamp;
-                Instant tb = b instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)b).timestamp :
-                              b instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)b).timestamp :
-                              ((LogStorage.LogEntry)b).timestamp;
-                return tb.compareTo(ta);
-            });
-            for (Object entry : events) {
-                Text msg;
-                String timeAgo = getTimeAgo(
-                    entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)entry).timestamp :
-                    entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)entry).timestamp :
-                    ((LogStorage.LogEntry)entry).timestamp
-                );
-                if (entry instanceof LogStorage.BlockLogEntry be) {
-                    String actionStr = be.action;
-                    Formatting color;
-                    if ("broke".equals(actionStr)) {
-                        actionStr = "broke block";
-                        color = Formatting.RED;
-                    } else if ("place".equals(actionStr) || "placed".equals(actionStr)) {
-                        actionStr = "placed block";
-                        color = Formatting.GREEN;
-                    } else {
-                        color = Formatting.GRAY;
-                    }
-                    msg = Text.literal(timeAgo + " ago - ")
-                        .append(Text.literal(be.playerName).formatted(Formatting.AQUA))
-                        .append(Text.literal(" " + actionStr + " ").formatted(color))
-                        .append(Text.literal("#" + be.blockId).formatted(Formatting.YELLOW))
-                        .append(Text.literal(" (" + getBlockName(be.blockId) + ").").formatted(Formatting.GRAY));
-                } else if (entry instanceof LogStorage.SignLogEntry se) {
-                    // Try to parse previous and new message from se.text or se.nbt
-                    String prevMsg = null;
-                    String newMsg = null;
-                    // If nbt contains both, try to extract them
-                    if (se.nbt != null && se.nbt.contains("previous") && se.nbt.contains("new")) {
-                        // Example: {previous:"old text",new:"new text"}
-                        String nbt = se.nbt;
-                        int prevIdx = nbt.indexOf("previous");
-                        int newIdx = nbt.indexOf("new");
-                        if (prevIdx != -1 && newIdx != -1) {
-                            int prevStart = nbt.indexOf('"', prevIdx + 8) + 1;
-                            int prevEnd = nbt.indexOf('"', prevStart);
-                            int newStart = nbt.indexOf('"', newIdx + 3) + 1;
-                            int newEnd = nbt.indexOf('"', newStart);
-                            if (prevStart > 0 && prevEnd > prevStart) prevMsg = nbt.substring(prevStart, prevEnd);
-                            if (newStart > 0 && newEnd > newStart) newMsg = nbt.substring(newStart, newEnd);
-                        }
-                    }
-                    if (prevMsg == null) prevMsg = "(unknown)";
-                    if (newMsg == null) newMsg = se.text;
-                    msg = Text.literal(timeAgo + " ago - ")
-                        .append(Text.literal(se.playerName).formatted(Formatting.AQUA))
-                        .append(Text.literal(" edited sign: ").formatted(Formatting.YELLOW))
-                        .append(Text.literal("[before] ").formatted(Formatting.GRAY))
-                        .append(Text.literal(prevMsg).formatted(Formatting.RED))
-                        .append(Text.literal(" [after] ").formatted(Formatting.GRAY))
-                        .append(Text.literal(newMsg).formatted(Formatting.GREEN));
-                } else if (entry instanceof LogStorage.LogEntry ce) {
-                    String desc;
-                    String containerName = "container";
-                    String itemStr = (ce.stack.getCount() > 1 ? "#" + ce.stack.getCount() + " " : "") + ce.stack.getName().getString();
-                    if ("deposited".equals(ce.action)) {
-                        desc = "deposited " + itemStr + " into " + containerName;
-                    } else if ("withdrew".equals(ce.action)) {
-                        desc = "withdrew " + itemStr + " from " + containerName;
-                    } else if ("inventory".equals(ce.action)) {
-                        desc = "inventory transaction: " + itemStr;
-                    } else {
-                        desc = ce.action;
-                    }
-                    Formatting color = "withdrew".equals(ce.action) ? Formatting.RED : "deposited".equals(ce.action) ? Formatting.GREEN : Formatting.GRAY;
-                    msg = Text.literal(timeAgo + " ago - ")
-                        .append(Text.literal(ce.playerName).formatted(Formatting.AQUA))
-                        .append(Text.literal(" " + desc).formatted(color))
-                        .append(Text.literal(".").formatted(Formatting.GRAY));
+            Text msg;
+            String timeAgo = getTimeAgo(
+                entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)entry).timestamp :
+                entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)entry).timestamp :
+                ((LogStorage.LogEntry)entry).timestamp
+            );
+            if (entry instanceof LogStorage.BlockLogEntry be) {
+                String actionStr = be.action;
+                Formatting color;
+                if ("broke".equals(actionStr)) {
+                    actionStr = "broke block";
+                    color = Formatting.RED;
+                } else if ("place".equals(actionStr) || "placed".equals(actionStr)) {
+                    actionStr = "placed block";
+                    color = Formatting.GREEN;
                 } else {
-                    msg = Text.literal("[?] Unknown log entry");
+                    color = Formatting.GRAY;
                 }
-                source.sendFeedback(() -> msg, false);
+                msg = Text.literal(timeAgo + " ago - ")
+                    .append(Text.literal(be.playerName).formatted(Formatting.AQUA))
+                    .append(Text.literal(" " + actionStr + " ").formatted(color))
+                    .append(Text.literal("#" + be.blockId).formatted(Formatting.YELLOW))
+                    .append(Text.literal(" (" + getBlockName(be.blockId) + ").").formatted(Formatting.GRAY));
+            } else if (entry instanceof LogStorage.SignLogEntry se) {
+                // Parse before/after from nbt JSON robustly
+                String prevMsg = null;
+                String newMsg = null;
+                if (se.nbt != null && se.nbt.contains("before") && se.nbt.contains("after")) {
+                    try {
+                        JsonObject nbtObj = JsonParser.parseString(se.nbt).getAsJsonObject();
+                        if (nbtObj.has("before")) {
+                            if (nbtObj.get("before").isJsonArray()) {
+                                StringBuilder sb = new StringBuilder();
+                                for (JsonElement el : nbtObj.getAsJsonArray("before")) {
+                                    if (sb.length() > 0) sb.append("\n");
+                                    sb.append(el.getAsString());
+                                }
+                                prevMsg = sb.toString();
+                            } else {
+                                prevMsg = nbtObj.get("before").getAsString();
+                            }
+                        }
+                        if (nbtObj.has("after")) {
+                            if (nbtObj.get("after").isJsonArray()) {
+                                StringBuilder sb = new StringBuilder();
+                                for (JsonElement el : nbtObj.getAsJsonArray("after")) {
+                                    if (sb.length() > 0) sb.append("\n");
+                                    sb.append(el.getAsString());
+                                }
+                                newMsg = sb.toString();
+                            } else {
+                                newMsg = nbtObj.get("after").getAsString();
+                            }
+                        }
+                    } catch (Exception e) {
+                        // ignore
+                    }
+                }
+                if (prevMsg == null) prevMsg = "(unknown)";
+                if (newMsg == null) newMsg = "(unknown)";
+                // Group all changed lines under a single [before] and [after] block
+                String[] beforeLines = prevMsg.split("\n", -1);
+                String[] afterLines = newMsg.split("\n", -1);
+                List<String> changedBefore = new ArrayList<>();
+                List<String> changedAfter = new ArrayList<>();
+                for (int j = 0; j < Math.max(beforeLines.length, afterLines.length); j++) {
+                    String beforeLine = j < beforeLines.length ? beforeLines[j] : "";
+                    String afterLine = j < afterLines.length ? afterLines[j] : "";
+                    if (!beforeLine.equals(afterLine)) {
+                        changedBefore.add(beforeLine);
+                        changedAfter.add(afterLine);
+                    } else if (j >= afterLines.length && j < beforeLines.length) {
+                        // Line was removed, show it in before, blank in after
+                        changedBefore.add(beforeLine);
+                        changedAfter.add("");
+                    }
+                }
+                StringBuilder diffBuilder = new StringBuilder();
+                if (!changedBefore.isEmpty()) {
+                    diffBuilder.append("§4[before]\n"); // yellow
+                    for (String line : changedBefore) diffBuilder.append(line.isEmpty() ? "\n" : line + "\n");
+                    diffBuilder.append("§a[after]\n"); // green
+                    for (String line : changedAfter) diffBuilder.append(line.isEmpty() ? "\n" : line + "\n");
+                } else {
+                    diffBuilder.append("(no visible change)");
+                }
+                String diffMsg = diffBuilder.toString().trim();
+                msg = Text.literal(timeAgo + " ago - ")
+                    .append(Text.literal(se.playerName).formatted(Formatting.AQUA))
+                    .append(Text.literal(" edited sign:").formatted(Formatting.YELLOW))
+                    .append(Text.literal("\n" + diffMsg));
+            } else if (entry instanceof LogStorage.LogEntry ce) {
+                String desc;
+                String containerName = "container";
+                String itemStr = (ce.stack.getCount() > 1 ? "#" + ce.stack.getCount() + " " : "") + ce.stack.getName().getString();
+                if ("deposited".equals(ce.action)) {
+                    desc = "deposited " + itemStr + " into " + containerName;
+                } else if ("withdrew".equals(ce.action)) {
+                    desc = "withdrew " + itemStr + " from " + containerName;
+                } else if ("inventory".equals(ce.action)) {
+                    desc = "inventory transaction: " + itemStr;
+                } else {
+                    desc = ce.action;
+                }
+                Formatting color = "withdrew".equals(ce.action) ? Formatting.RED : "deposited".equals(ce.action) ? Formatting.GREEN : Formatting.GRAY;
+                msg = Text.literal(timeAgo + " ago - ")
+                    .append(Text.literal(ce.playerName).formatted(Formatting.AQUA))
+                    .append(Text.literal(" " + desc).formatted(color))
+                    .append(Text.literal(".").formatted(Formatting.GRAY));
+            } else {
+                msg = Text.literal("[?] Unknown log entry");
             }
+            source.sendFeedback(() -> msg, false);
         }
         String pageMsg = "Page " + page + "/" + totalPages + ". View older data by typing \"/flowframe minetracer page <page>\".";
         source.sendFeedback(() -> Text.literal(pageMsg).formatted(Formatting.GRAY), false);
@@ -344,7 +390,7 @@ public class MineTracerCommand {
         }
     }
 
-    private static int restore(CommandContext<ServerCommandSource> ctx) {
+    private static int rollback(CommandContext<ServerCommandSource> ctx) {
         String arg = StringArgumentType.getString(ctx, "arg");
         ServerCommandSource source = ctx.getSource();
         String userFilter = null;
@@ -369,9 +415,9 @@ public class MineTracerCommand {
                 byPos.computeIfAbsent(entry.pos, k -> new java.util.ArrayList<>()).add(entry);
             }
             for (Map.Entry<BlockPos, java.util.List<LogStorage.LogEntry>> e : byPos.entrySet()) {
-                restored += restoreToContainer(source, e.getKey(), e.getValue());
+                restored += rollbackToContainer(source, e.getKey(), e.getValue());
             }
-            // --- Block restore logic ---
+            // --- Block rollback logic ---
             java.util.List<LogStorage.BlockLogEntry> blockLogs = LogStorage.getBlockLogsInRange(playerPos, range, userFilter);
             for (LogStorage.BlockLogEntry entry : blockLogs) {
                 if ("broke".equals(entry.action)) {
@@ -380,7 +426,6 @@ public class MineTracerCommand {
                         net.minecraft.block.Block block = net.minecraft.registry.Registries.BLOCK.get(new net.minecraft.util.Identifier(entry.blockId));
                         net.minecraft.block.BlockState state = block.getDefaultState();
                         if (entry.nbt != null && !entry.nbt.isEmpty()) {
-                            // Try to parse NBT for block entity
                             net.minecraft.nbt.NbtCompound nbt = net.minecraft.nbt.StringNbtReader.parse(entry.nbt);
                             source.getWorld().setBlockState(entry.pos, state);
                             net.minecraft.block.entity.BlockEntity be = source.getWorld().getBlockEntity(entry.pos);
@@ -405,9 +450,9 @@ public class MineTracerCommand {
                 byPos.computeIfAbsent(entry.pos, k -> new java.util.ArrayList<>()).add(entry);
             }
             for (Map.Entry<BlockPos, java.util.List<LogStorage.LogEntry>> e : byPos.entrySet()) {
-                restored += restoreToContainer(source, e.getKey(), e.getValue());
+                restored += rollbackToContainer(source, e.getKey(), e.getValue());
             }
-            // --- Block restore logic for user ---
+            // --- Block rollback logic for user ---
             java.util.List<LogStorage.BlockLogEntry> blockLogs = LogStorage.getBlockLogsInRange(source.getPlayer().getBlockPos(), 100, userFilter);
             for (LogStorage.BlockLogEntry entry : blockLogs) {
                 if ("broke".equals(entry.action)) {
@@ -430,19 +475,19 @@ public class MineTracerCommand {
                 }
             }
         } else {
-            source.sendFeedback(() -> Text.literal("Usage: /flowframe minetracer restore range:<blocks> user:<name> or /flowframe minetracer restore user:<name>"), false);
+            source.sendFeedback(() -> Text.literal("Usage: /flowframe minetracer rollback range:<blocks> user:<name> or /flowframe minetracer rollback user:<name>"), false);
             return Command.SINGLE_SUCCESS;
         }
         if (restored > 0 || blockRestored > 0) {
             int count = restored + blockRestored;
-            source.sendFeedback(() -> Text.literal("Restored " + count + " items/blocks."), false);
+            source.sendFeedback(() -> Text.literal("Rolled back " + count + " items/blocks."), false);
         } else {
-            source.sendFeedback(() -> Text.literal("No items or blocks to restore."), false);
+            source.sendFeedback(() -> Text.literal("No items or blocks to rollback."), false);
         }
         return Command.SINGLE_SUCCESS;
     }
 
-    private static int restoreToContainer(ServerCommandSource source, BlockPos pos, java.util.List<LogStorage.LogEntry> logs) {
+    private static int rollbackToContainer(ServerCommandSource source, BlockPos pos, java.util.List<LogStorage.LogEntry> logs) {
         Object blockEntity = source.getWorld().getBlockEntity(pos);
         if (!(blockEntity instanceof Inventory)) {
             return 0;

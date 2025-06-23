@@ -154,17 +154,8 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
 ### 22. Potion Duration Extension (Vanilla & Modded)
 
 - **Description:**
-  - Ensures all drinkable potions (vanilla and modded) last at least 2 hours (144,000 ticks) when applied, except for effects from beacons and certain excluded effects.
+  - Ensures all drinkable potions (vanilla and modded) last at least 2 hours (144,000 ticks) when applied.
   - **HerbalBrews teas** (including all effects like "feral", "balanced", "tough", "lifeleech", "fortune", "bonding", "deeprush", and regeneration from Rooibos Tea) are always extended to 2 hours, even if the mod applies them with a different method.
-  - **Regeneration** is only extended to 2 hours if it comes from a drinkable potion or a HerbalBrews tea (not from enchanted golden apples or other sources).
-  - **The following effects are NOT extended and/or are disabled:**
-    - Slowness (vanilla)
-    - Health Boost (vanilla)
-    - Mining Fatigue (vanilla, completely disabled)
-    - Poison (vanilla, completely disabled)
-    - All effects from the Simply Skills mod
-    - All effects from the Simply Swords mod
-  - **Suspicious stew logic and features have been fully removed.**
 - **Commands:** None
 - **Permissions:** None (automatic)
 

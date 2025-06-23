@@ -23,7 +23,8 @@
     "MixinScreenHandler",
     "MixinServerPlayerInteractionManager",
     "MixinSignBlockEntity",
-    "MixinPlayerEntity"
+    "MixinPlayerEntity",
+    "ServerPlayerInteractionManagerAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

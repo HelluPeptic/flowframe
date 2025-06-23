@@ -37,20 +37,9 @@ public class ChestEventListener {
                 for (int i = 0; i < inv.size(); i++) {
                     ItemStack stack = inv.getStack(i);
                     if (!stack.isEmpty()) {
-                        LogStorage.logContainerAction("remove", player, pos, stack);
+                        LogStorage.logContainerAction("withdrew", player, pos, stack);
                     }
                 }
-            }
-            return true;
-        });
-        // Block break (removal)
-        PlayerBlockBreakEvents.BEFORE.register((world, player, pos, state, blockEntity) -> {
-            Identifier blockId = Registries.BLOCK.getId(state.getBlock());
-            String nbt = blockEntity != null ? blockEntity.createNbt().toString() : null;
-            LogStorage.logBlockAction("remove", player, pos, blockId.toString(), nbt);
-            // Sign text logging
-            if (blockEntity instanceof SignBlockEntity sign) {
-                LogStorage.logSignAction("remove", player, pos, sign.getFrontText().getMessage(0, false).getString(), sign.createNbt().toString());
             }
             return true;
         });
