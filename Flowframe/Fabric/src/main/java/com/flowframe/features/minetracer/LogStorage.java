@@ -166,6 +166,82 @@ public class LogStorage {
         saveAllLogs();
     }
 
+    public static void logBlockAction(String action, PlayerEntity player, BlockPos pos, String blockId, String nbt) {
+        BlockLogEntry entry = new BlockLogEntry(action, player.getName().getString(), pos, blockId, nbt, Instant.now());
+        blockLogs.add(entry);
+        saveAllLogs();
+    }
+
+    public static void logSignAction(String action, PlayerEntity player, BlockPos pos, String text, String nbt) {
+        String playerName = player != null ? player.getName().getString() : "unknown";
+        SignLogEntry entry = new SignLogEntry(action, playerName, pos, text, nbt, Instant.now());
+        signLogs.add(entry);
+        saveAllLogs();
+    }
+
+    public static void logKillAction(String killerName, String victimName, BlockPos pos, String world) {
+        killLogs.add(new KillLogEntry(killerName, victimName, pos, world, Instant.now()));
+        saveAllLogs();
+    }
+
+    public static List<String> getAllPlayerNames() {
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (LogEntry entry : logs) {
+            names.add(entry.playerName);
+        }
+        for (BlockLogEntry entry : blockLogs) {
+            names.add(entry.playerName);
+        }
+        for (SignLogEntry entry : signLogs) {
+            names.add(entry.playerName);
+        }
+        return new java.util.ArrayList<>(names);
+    }
+
+    public static List<BlockLogEntry> getBlockLogsInRange(BlockPos center, int range, String userFilter) {
+        List<BlockLogEntry> result = new ArrayList<>();
+        int r2 = range * range;
+        for (BlockLogEntry entry : blockLogs) {
+            if ((userFilter == null || entry.playerName.equalsIgnoreCase(userFilter)) &&
+                entry.pos.getSquaredDistance(center.getX(), center.getY(), center.getZ()) <= r2) {
+                result.add(entry);
+            }
+        }
+        return result;
+    }
+    public static List<SignLogEntry> getSignLogsInRange(BlockPos center, int range, String userFilter) {
+        List<SignLogEntry> result = new ArrayList<>();
+        int r2 = range * range;
+        for (SignLogEntry entry : signLogs) {
+            if ((userFilter == null || entry.playerName.equalsIgnoreCase(userFilter)) &&
+                entry.pos.getSquaredDistance(center.getX(), center.getY(), center.getZ()) <= r2) {
+                result.add(entry);
+            }
+        }
+        return result;
+    }
+    public static List<KillLogEntry> getKillLogsInRange(BlockPos center, int range, String userFilter) {
+        List<KillLogEntry> result = new ArrayList<>();
+        int r2 = range * range;
+        for (KillLogEntry entry : killLogs) {
+            if ((userFilter == null || entry.killerName.equalsIgnoreCase(userFilter)) &&
+                entry.pos.getSquaredDistance(center.getX(), center.getY(), center.getZ()) <= r2) {
+                result.add(entry);
+            }
+        }
+        return result;
+    }
+    public static List<LogEntry> getLogsInRange(BlockPos center, int range) {
+        List<LogEntry> result = new ArrayList<>();
+        int r2 = range * range;
+        for (LogEntry entry : logs) {
+            if (entry.pos.getSquaredDistance(center.getX(), center.getY(), center.getZ()) <= r2) {
+                result.add(entry);
+            }
+        }
+        return result;
+    }
+
     // Helper class for JSON serialization
     private static class LogEntryJson {
         String action;

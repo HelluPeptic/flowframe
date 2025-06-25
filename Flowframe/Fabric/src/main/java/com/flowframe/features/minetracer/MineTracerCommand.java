@@ -26,6 +26,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonElement;
 import java.util.ArrayList;
+import net.minecraft.item.ItemStack;
 
 // Handles /flowframe minetracer commands (lookup, rollback)
 public class MineTracerCommand {
@@ -506,22 +507,73 @@ public class MineTracerCommand {
     private static int rollbackToContainer(ServerCommandSource source, BlockPos pos, java.util.List<LogStorage.LogEntry> logs) {
         Object blockEntity = source.getWorld().getBlockEntity(pos);
         if (!(blockEntity instanceof Inventory)) {
+            System.out.println("[MineTracer] Block entity at " + pos + " is not an Inventory: " + (blockEntity == null ? "null" : blockEntity.getClass().getName()));
             return 0;
         }
         Inventory inv = (Inventory) blockEntity;
+        System.out.println("[MineTracer] Rollback at " + pos + ", inventory size: " + inv.size());
+        printInventory(inv, "Before rollback");
         int restored = 0;
         for (LogStorage.LogEntry entry : logs) {
-            if ("remove".equals(entry.action)) {
-                for (int i = 0; i < inv.size(); i++) {
+            if ("remove".equals(entry.action) || "withdrew".equals(entry.action)) {
+                System.out.println("[MineTracer] Restoring log entry: action=" + entry.action + ", player=" + entry.playerName + ", item=" + entry.stack + ", count=" + entry.stack.getCount());
+                int toRestore = entry.stack.getCount();
+                // First, try to merge with existing stacks
+                for (int i = 0; i < inv.size() && toRestore > 0; i++) {
+                    ItemStack slotStack = inv.getStack(i);
+                    if (!slotStack.isEmpty() &&
+                        ItemStack.areItemsEqual(slotStack, entry.stack) &&
+                        java.util.Objects.equals(slotStack.getNbt(), entry.stack.getNbt())) {
+                        int max = Math.min(slotStack.getMaxCount(), inv.getMaxCountPerStack());
+                        int canAdd = max - slotStack.getCount();
+                        if (canAdd > 0) {
+                            int add = Math.min(canAdd, toRestore);
+                            slotStack.increment(add);
+                            toRestore -= add;
+                            System.out.println("[MineTracer] Merged " + add + " into slot " + i + ", now " + slotStack.getCount());
+                        }
+                    }
+                }
+                // Then, fill empty slots
+                for (int i = 0; i < inv.size() && toRestore > 0; i++) {
                     if (inv.getStack(i).isEmpty()) {
-                        inv.setStack(i, entry.stack.copy());
+                        ItemStack newStack = entry.stack.copy();
+                        newStack.setCount(toRestore);
+                        inv.setStack(i, newStack);
                         restored++;
+                        System.out.println("[MineTracer] Placed " + toRestore + " in empty slot " + i);
+                        toRestore = 0;
                         break;
                     }
                 }
+                if (toRestore > 0) {
+                    System.out.println("[MineTracer] Could not restore all items for entry: " + entry.stack + ", remaining: " + toRestore);
+                }
+            }
+        }
+        printInventory(inv, "After rollback");
+        // Mark block entity dirty and sync if possible
+        if (blockEntity instanceof net.minecraft.block.entity.BlockEntity) {
+            ((net.minecraft.block.entity.BlockEntity) blockEntity).markDirty();
+            System.out.println("[MineTracer] Marked block entity dirty at " + pos);
+            // Try to sync to client if possible
+            if (blockEntity instanceof net.minecraft.block.entity.LootableContainerBlockEntity) {
+                ((net.minecraft.block.entity.LootableContainerBlockEntity) blockEntity).markDirty();
+                source.getWorld().updateListeners(pos, source.getWorld().getBlockState(pos), source.getWorld().getBlockState(pos), 3);
+                System.out.println("[MineTracer] Synced block entity at " + pos);
             }
         }
         return restored;
+    }
+
+    private static void printInventory(Inventory inv, String label) {
+        System.out.println("[MineTracer] " + label + ":");
+        for (int i = 0; i < inv.size(); i++) {
+            ItemStack stack = inv.getStack(i);
+            if (!stack.isEmpty()) {
+                System.out.println("  Slot " + i + ": " + stack + " x" + stack.getCount());
+            }
+        }
     }
 
     private static long parseTimeArg(String arg) {

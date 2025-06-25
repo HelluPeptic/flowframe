@@ -34,16 +34,16 @@ public class ChestEventListener {
         PlayerBlockBreakEvents.BEFORE.register((world, player, pos, state, blockEntity) -> {
             Block block = state.getBlock();
             if (isTrackedContainer(block) && blockEntity instanceof Inventory inv) {
+                BlockPos entityPos = blockEntity.getPos();
                 for (int i = 0; i < inv.size(); i++) {
                     ItemStack stack = inv.getStack(i);
                     if (!stack.isEmpty()) {
-                        LogStorage.logContainerAction("withdrew", player, pos, stack);
+                        LogStorage.logContainerAction("withdrew", player, entityPos, stack);
                     }
                 }
             }
             return true;
         });
-        // TODO: Block place logging via mixin
     }
 
     private static boolean isTrackedContainer(Block block) {
