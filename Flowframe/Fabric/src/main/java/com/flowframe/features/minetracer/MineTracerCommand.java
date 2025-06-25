@@ -79,7 +79,7 @@ public class MineTracerCommand {
             }
         } else if (last.startsWith("action:")) {
             String afterAction = last.substring(7);
-            String[] actions = {"inventory", "deposited", "withdrew"};
+            String[] actions = {"inventory", "deposited", "withdrew", "kill"};
             for (String act : actions) {
                 if (act.startsWith(afterAction)) {
                     subBuilder.suggest("action:" + act);
@@ -164,6 +164,7 @@ public class MineTracerCommand {
         List<LogStorage.BlockLogEntry> blockLogs = LogStorage.getBlockLogsInRange(playerPos, range, userFilter);
         List<LogStorage.SignLogEntry> signLogs = LogStorage.getSignLogsInRange(playerPos, range, userFilter);
         List<LogStorage.LogEntry> containerLogs = LogStorage.getLogsInRange(playerPos, range);
+        List<LogStorage.KillLogEntry> killLogs = LogStorage.getKillLogsInRange(playerPos, range, userFilter);
         if (userFilter != null) {
             final String userFilterFinal = userFilter;
             containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
@@ -174,6 +175,7 @@ public class MineTracerCommand {
             blockLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
             signLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
             containerLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
+            killLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
         }
         // Filter out inventory logs unless action:inventory is present
         if (!showInventory) {
@@ -185,20 +187,26 @@ public class MineTracerCommand {
             containerLogs.removeIf(entry -> !entry.action.equalsIgnoreCase(actionFilterFinal));
             blockLogs.removeIf(entry -> !entry.action.equalsIgnoreCase(actionFilterFinal));
             signLogs.removeIf(entry -> !entry.action.equalsIgnoreCase(actionFilterFinal));
+            killLogs.removeIf(entry -> !entry.action.equalsIgnoreCase(actionFilterFinal));
         }
         // Flatten all logs into a single list with position
         List<FlatLogEntry> flatList = new ArrayList<>();
         for (LogStorage.BlockLogEntry entry : blockLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
         for (LogStorage.SignLogEntry entry : signLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
         for (LogStorage.LogEntry entry : containerLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
+        for (LogStorage.KillLogEntry entry : killLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
         // Sort by timestamp descending
         flatList.sort((a, b) -> {
-            Instant ta = a.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)a.entry).timestamp :
-                        a.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)a.entry).timestamp :
-                        ((LogStorage.LogEntry)a.entry).timestamp;
-            Instant tb = b.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)b.entry).timestamp :
-                        b.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)b.entry).timestamp :
-                        ((LogStorage.LogEntry)b.entry).timestamp;
+            Instant ta =
+                a.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)a.entry).timestamp :
+                a.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)a.entry).timestamp :
+                a.entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)a.entry).timestamp :
+                ((LogStorage.LogEntry)a.entry).timestamp;
+            Instant tb =
+                b.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)b.entry).timestamp :
+                b.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)b.entry).timestamp :
+                b.entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)b.entry).timestamp :
+                ((LogStorage.LogEntry)b.entry).timestamp;
             return tb.compareTo(ta);
         });
         int entriesPerPage = 5; // Reduced from 10 to 5 for less logs per page
@@ -239,6 +247,7 @@ public class MineTracerCommand {
             String timeAgo = getTimeAgo(
                 entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)entry).timestamp :
                 entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)entry).timestamp :
+                entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)entry).timestamp :
                 ((LogStorage.LogEntry)entry).timestamp
             );
             if (entry instanceof LogStorage.BlockLogEntry be) {
@@ -344,6 +353,13 @@ public class MineTracerCommand {
                     .append(Text.literal(ce.playerName).formatted(Formatting.AQUA))
                     .append(Text.literal(" " + desc).formatted(color))
                     .append(Text.literal(".").formatted(Formatting.GRAY));
+            } else if (entry instanceof LogStorage.KillLogEntry ke) {
+                Formatting color = ke.victimName.startsWith("Player") ? Formatting.RED : Formatting.YELLOW;
+                msg = Text.literal(timeAgo + " ago - ")
+                    .append(Text.literal(ke.killerName).formatted(Formatting.AQUA))
+                    .append(Text.literal(" killed ").formatted(Formatting.RED))
+                    .append(Text.literal(ke.victimName).formatted(color))
+                    .append(Text.literal(" in world " + ke.world).formatted(Formatting.GRAY));
             } else {
                 msg = Text.literal("[?] Unknown log entry");
             }
