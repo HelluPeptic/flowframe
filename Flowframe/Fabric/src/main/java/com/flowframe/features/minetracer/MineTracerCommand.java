@@ -84,40 +84,8 @@ public class MineTracerCommand {
         if (!input.contains("action:")) subBuilder.suggest("action:");
         if (!input.contains("range:")) subBuilder.suggest("range:");
         if (!input.contains("include:")) subBuilder.suggest("include:");
-
-        // Suggest player names after user:
-        if (last.startsWith("user:")) {
-            String afterUser = last.substring(5);
-            for (String name : LogStorage.getAllPlayerNames()) {
-                if (name.toLowerCase().startsWith(afterUser.toLowerCase())) {
-                    subBuilder.suggest("user:" + name);
-                }
-            }
-        } else if (last.startsWith("action:")) {
-            String afterAction = last.substring(7);
-            String[] actions = {"inventory", "deposited", "withdrew", "kill"};
-            for (String act : actions) {
-                if (act.startsWith(afterAction)) {
-                    subBuilder.suggest("action:" + act);
-                }
-            }
-        } else if (last.startsWith("time:")) {
-            String afterTime = last.substring(5);
-            String[] times = {"1m", "5m", "1h", "1d", "1w", "1mo", "1y"};
-            for (String t : times) {
-                if (t.startsWith(afterTime)) {
-                    subBuilder.suggest("time:" + t);
-                }
-            }
-        } else if (last.startsWith("range:")) {
-            String afterRange = last.substring(6);
-            String[] ranges = {"10", "50", "100", "200"};
-            for (String r : ranges) {
-                if (r.startsWith(afterRange)) {
-                    subBuilder.suggest("range:" + r);
-                }
-            }
-        } else if (last.startsWith("include:")) {
+        // Suggest item IDs after include:
+        if (last.startsWith("include:")) {
             String afterInclude = last.substring(8);
             net.minecraft.registry.Registry<net.minecraft.item.Item> itemRegistry = net.minecraft.registry.Registries.ITEM;
             for (net.minecraft.util.Identifier id : itemRegistry.getIds()) {
@@ -218,7 +186,8 @@ public class MineTracerCommand {
         }
         // Filter by include item if specified
         if (includeItem != null && !includeItem.isEmpty()) {
-            containerLogs.removeIf(entry -> !net.minecraft.registry.Registries.ITEM.getId(entry.stack.getItem()).toString().equals(includeItem));
+            final String includeItemFinal = includeItem;
+            containerLogs.removeIf(entry -> !net.minecraft.registry.Registries.ITEM.getId(entry.stack.getItem()).toString().equals(includeItemFinal));
         }
         // Flatten all logs into a single list with position
         List<FlatLogEntry> flatList = new ArrayList<>();
@@ -422,4 +391,161 @@ public class MineTracerCommand {
             } else if (part.startsWith("range:")) {
                 try { range = Integer.parseInt(part.substring(6)); } catch (Exception ignored) {}
             } else if (part.startsWith("action:")) {
-                actionFilter = part.substring 
+                actionFilter = part.substring(7).toLowerCase();
+            } else if (part.startsWith("include:")) {
+                includeItem = part.substring(8);
+            }
+        }
+        BlockPos playerPos = source.getPlayer().getBlockPos();
+        Instant cutoff = null;
+        if (timeArg != null) {
+            long seconds = parseTimeArg(timeArg);
+            cutoff = Instant.now().minusSeconds(seconds);
+        }
+        // Gather all logs
+        List<LogStorage.BlockLogEntry> blockLogs = LogStorage.getBlockLogsInRange(playerPos, range, userFilter);
+        List<LogStorage.SignLogEntry> signLogs = LogStorage.getSignLogsInRange(playerPos, range, userFilter);
+        List<LogStorage.LogEntry> containerLogs = LogStorage.getLogsInRange(playerPos, range);
+        // For kill logs, filter by killer if action:kill, otherwise by victim
+        boolean filterByKiller = actionFilter != null && actionFilter.equalsIgnoreCase("kill");
+        List<LogStorage.KillLogEntry> killLogs = LogStorage.getKillLogsInRange(playerPos, range, userFilter, filterByKiller);
+        // Apply time filter
+        if (cutoff != null) {
+            final Instant cutoffFinal = cutoff;
+            blockLogs.removeIf(entry -> entry.timestamp.isAfter(cutoffFinal));
+            signLogs.removeIf(entry -> entry.timestamp.isAfter(cutoffFinal));
+            containerLogs.removeIf(entry -> entry.timestamp.isAfter(cutoffFinal));
+            killLogs.removeIf(entry -> entry.timestamp.isAfter(cutoffFinal));
+        }
+        // Filter out inventory logs unless action:inventory is present
+        if (!"inventory".equals(actionFilter)) {
+            containerLogs.removeIf(entry -> "inventory".equals(entry.action));
+        }
+        // Filter by action if specified
+        if (actionFilter != null) {
+            final String actionFilterFinal = actionFilter;
+            containerLogs.removeIf(entry -> !entry.action.equalsIgnoreCase(actionFilterFinal));
+            blockLogs.removeIf(entry -> !entry.action.equalsIgnoreCase(actionFilterFinal));
+            signLogs.removeIf(entry -> !entry.action.equalsIgnoreCase(actionFilterFinal));
+            killLogs.removeIf(entry -> !entry.action.equalsIgnoreCase(actionFilterFinal));
+        }
+        // Filter by include item if specified
+        if (includeItem != null && !includeItem.isEmpty()) {
+            final String includeItemFinal = includeItem;
+            containerLogs.removeIf(entry -> !net.minecraft.registry.Registries.ITEM.getId(entry.stack.getItem()).toString().equals(includeItemFinal));
+        }
+        // Flatten all logs into a single list with position
+        List<FlatLogEntry> flatList = new ArrayList<>();
+        for (LogStorage.BlockLogEntry entry : blockLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
+        for (LogStorage.SignLogEntry entry : signLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
+        for (LogStorage.LogEntry entry : containerLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
+        for (LogStorage.KillLogEntry entry : killLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
+        // Sort by timestamp descending
+        flatList.sort((a, b) -> {
+            Instant ta =
+                a.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)a.entry).timestamp :
+                a.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)a.entry).timestamp :
+                a.entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)a.entry).timestamp :
+                ((LogStorage.LogEntry)a.entry).timestamp;
+            Instant tb =
+                b.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)b.entry).timestamp :
+                b.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)b.entry).timestamp :
+                b.entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)b.entry).timestamp :
+                ((LogStorage.LogEntry)b.entry).timestamp;
+            return tb.compareTo(ta);
+        });
+        int entriesPerPage = 5; // Reduced from 10 to 5 for less logs per page
+        lastQueries.put(source.getPlayer().getUuid(), new QueryContext(flatList, entriesPerPage));
+        // Show first page
+        return showRollbackPage(source, flatList, 1, entriesPerPage);
+    }
+
+    public static int rollbackPage(CommandContext<ServerCommandSource> ctx) {
+        int page = ctx.getArgument("page", Integer.class);
+        ServerCommandSource source = ctx.getSource();
+        QueryContext context = lastQueries.get(source.getPlayer().getUuid());
+        if (context == null) {
+            source.sendFeedback(() -> Text.literal("No previous rollback found. Use /flowframe minetracer rollback [filters] first.").formatted(Formatting.RED), false);
+            return Command.SINGLE_SUCCESS;
+        }
+        return showRollbackPage(source, context.flatList, page, context.entriesPerPage);
+    }
+
+    private static int showRollbackPage(ServerCommandSource source, List<FlatLogEntry> flatList, int page, int entriesPerPage) {
+        int totalPages = (int)Math.ceil((double)flatList.size() / entriesPerPage);
+        if (page < 1) page = 1;
+        if (page > totalPages) page = totalPages;
+        int start = (page - 1) * entriesPerPage;
+        int end = Math.min(start + entriesPerPage, flatList.size());
+        if (flatList.isEmpty()) {
+            source.sendFeedback(() -> Text.literal("No logs found.").formatted(Formatting.GRAY), false);
+            return Command.SINGLE_SUCCESS;
+        }
+        source.sendFeedback(() -> Text.literal("----- MineTracer Rollback Results -----").formatted(Formatting.AQUA), false);
+        for (int i = start; i < end; i++) {
+            FlatLogEntry fle = flatList.get(i);
+            BlockPos pos = fle.pos;
+            Object entry = fle.entry;
+            String header = "(x" + pos.getX() + "/y" + pos.getY() + "/z" + pos.getZ() + ")";
+            source.sendFeedback(() -> Text.literal(header).formatted(Formatting.DARK_AQUA), false);
+            Text msg = formatLogEntryForChat(entry);
+            source.sendFeedback(() -> msg, false);
+        }
+        String pageMsg = "Page " + page + "/" + totalPages + ". View newer data by typing \"/flowframe minetracer rollback page <page>\".";
+        source.sendFeedback(() -> Text.literal(pageMsg).formatted(Formatting.GRAY), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static Instant getMostRecentTimestamp(java.util.List<Object> events) {
+        Instant mostRecent = Instant.EPOCH;
+        for (Object entry : events) {
+            Instant t = entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)entry).timestamp :
+                        entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)entry).timestamp :
+                        ((LogStorage.LogEntry)entry).timestamp;
+            if (t.isAfter(mostRecent)) mostRecent = t;
+        }
+        return mostRecent;
+    }
+
+    private static String getTimeAgo(Instant timestamp) {
+        long seconds = java.time.Duration.between(timestamp, Instant.now()).getSeconds();
+        if (seconds < 60) return String.format("%.2fs", (double)seconds);
+        long minutes = seconds / 60;
+        if (minutes < 60) return String.format("%.2fm", (double)minutes + (seconds % 60) / 60.0);
+        long hours = minutes / 60;
+        if (hours < 24) return String.format("%.2fh", (double)hours + (minutes % 60) / 60.0);
+        long days = hours / 24;
+        if (days < 30) return String.format("%.2fd", (double)days + (hours % 24) / 24.0);
+        long months = days / 30;
+        if (months < 12) return String.format("%.2fmo", (double)months + (days % 30) / 30.0);
+        long years = months / 12;
+        return String.format("%.2fy", (double)years + (months % 12) / 12.0);
+    }
+
+    private static String getBlockName(String blockId) {
+        // Try to get a readable block name from the block registry
+        try {
+            net.minecraft.block.Block block = net.minecraft.registry.Registries.BLOCK.get(new net.minecraft.util.Identifier(blockId));
+            return block.getName().getString();
+        } catch (Exception e) {
+            return blockId;
+        }
+    }
+
+    private static long parseTimeArg(String timeArg) {
+        timeArg = timeArg.toLowerCase();
+        long multiplier = 1;
+        if (timeArg.endsWith("s")) { multiplier = 1; timeArg = timeArg.substring(0, timeArg.length() - 1); } // seconds
+        else if (timeArg.endsWith("m")) { multiplier = 60; timeArg = timeArg.substring(0, timeArg.length() - 1); } // minutes
+        else if (timeArg.endsWith("h")) { multiplier = 3600; timeArg = timeArg.substring(0, timeArg.length() - 1); } // hours
+        else if (timeArg.endsWith("d")) { multiplier = 86400; timeArg = timeArg.substring(0, timeArg.length() - 1); } // days
+        else if (timeArg.endsWith("w")) { multiplier = 604800; timeArg = timeArg.substring(0, timeArg.length() - 1); } // weeks
+        else if (timeArg.endsWith("mo")) { multiplier = 2419200; timeArg = timeArg.substring(0, timeArg.length() - 2); } // months
+        else if (timeArg.endsWith("y")) { multiplier = 29030400; timeArg = timeArg.substring(0, timeArg.length() - 1); } // years
+        try {
+            return Long.parseLong(timeArg) * multiplier;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+}
