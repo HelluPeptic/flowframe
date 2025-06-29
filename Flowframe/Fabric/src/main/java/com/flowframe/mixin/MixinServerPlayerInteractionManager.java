@@ -1,6 +1,7 @@
 package com.flowframe.mixin;
 
 import com.flowframe.features.minetracer.LogStorage;
+import com.flowframe.features.minetracer.MineTracerCommand;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.network.ServerPlayerInteractionManager;
 import net.minecraft.util.math.BlockPos;
@@ -82,6 +83,74 @@ public class MixinServerPlayerInteractionManager {
             }
             String beforeText = GSON.toJson(lines);
             LogStorage.logSignAction("broke", player, pos, beforeText, sign.createNbt().toString());
+        }
+    }
+
+    @Inject(method = "interactBlock", at = @At("HEAD"), cancellable = true)
+    private void flowframe$inspectorModeInteract(ServerPlayerEntity player, net.minecraft.world.World world, net.minecraft.item.ItemStack stack, net.minecraft.util.Hand hand, net.minecraft.util.hit.BlockHitResult hitResult, CallbackInfoReturnable<net.minecraft.util.ActionResult> cir) {
+        if (LogStorage.isInspectorMode(player)) {
+            BlockPos pos = hitResult.getBlockPos();
+            java.util.List<LogStorage.BlockLogEntry> blockLogs = LogStorage.getBlockLogsInRange(pos, 0, null);
+            java.util.List<LogStorage.SignLogEntry> signLogs = LogStorage.getSignLogsInRange(pos, 0, null);
+            java.util.List<LogStorage.LogEntry> containerLogs = LogStorage.getLogsInRange(pos, 0);
+            java.util.List<LogStorage.KillLogEntry> killLogs = LogStorage.getKillLogsInRange(pos, 0, null);
+            boolean found = false;
+            for (Object entry : blockLogs) {
+                player.sendMessage(MineTracerCommand.formatLogEntryForChat(entry), false);
+                found = true;
+            }
+            for (Object entry : signLogs) {
+                player.sendMessage(MineTracerCommand.formatLogEntryForChat(entry), false);
+                found = true;
+            }
+            for (Object entry : containerLogs) {
+                player.sendMessage(MineTracerCommand.formatLogEntryForChat(entry), false);
+                found = true;
+            }
+            for (Object entry : killLogs) {
+                if (((LogStorage.KillLogEntry)entry).pos.equals(pos)) {
+                    player.sendMessage(MineTracerCommand.formatLogEntryForChat(entry), false);
+                    found = true;
+                }
+            }
+            if (!found) {
+                player.sendMessage(net.minecraft.text.Text.literal("[MineTracer] No logs found for this block."), false);
+            }
+            cir.setReturnValue(net.minecraft.util.ActionResult.SUCCESS);
+        }
+    }
+
+    @Inject(method = "tryBreakBlock", at = @At("HEAD"), cancellable = true)
+    private void flowframe$inspectorModeBreak(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
+        ServerPlayerEntity player = ((ServerPlayerInteractionManagerAccessor)this).getPlayer();
+        if (LogStorage.isInspectorMode(player)) {
+            java.util.List<LogStorage.BlockLogEntry> blockLogs = LogStorage.getBlockLogsInRange(pos, 0, null);
+            java.util.List<LogStorage.SignLogEntry> signLogs = LogStorage.getSignLogsInRange(pos, 0, null);
+            java.util.List<LogStorage.LogEntry> containerLogs = LogStorage.getLogsInRange(pos, 0);
+            java.util.List<LogStorage.KillLogEntry> killLogs = LogStorage.getKillLogsInRange(pos, 0, null);
+            boolean found = false;
+            for (Object entry : blockLogs) {
+                player.sendMessage(MineTracerCommand.formatLogEntryForChat(entry), false);
+                found = true;
+            }
+            for (Object entry : signLogs) {
+                player.sendMessage(MineTracerCommand.formatLogEntryForChat(entry), false);
+                found = true;
+            }
+            for (Object entry : containerLogs) {
+                player.sendMessage(MineTracerCommand.formatLogEntryForChat(entry), false);
+                found = true;
+            }
+            for (Object entry : killLogs) {
+                if (((LogStorage.KillLogEntry)entry).pos.equals(pos)) {
+                    player.sendMessage(MineTracerCommand.formatLogEntryForChat(entry), false);
+                    found = true;
+                }
+            }
+            if (!found) {
+                player.sendMessage(net.minecraft.text.Text.literal("[MineTracer] No logs found for this block."), false);
+            }
+            cir.setReturnValue(false);
         }
     }
 }

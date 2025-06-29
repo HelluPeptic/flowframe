@@ -19,6 +19,7 @@ import java.util.Map;
 import com.google.gson.TypeAdapter;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
+import net.minecraft.server.network.ServerPlayerEntity;
 
 // Handles storage of all logs in a single file
 public class LogStorage {
@@ -155,6 +156,7 @@ public class LogStorage {
     public static void registerServerLifecycle() {
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTING.register(server -> {
             loadAllLogs();
+            com.flowframe.features.minetracer.KillLogger.register(); // Register kill logging
         });
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             saveAllLogs();
@@ -220,16 +222,27 @@ public class LogStorage {
         }
         return result;
     }
-    public static List<KillLogEntry> getKillLogsInRange(BlockPos center, int range, String userFilter) {
+    public static List<KillLogEntry> getKillLogsInRange(BlockPos center, int range, String userFilter, boolean filterByKiller) {
         List<KillLogEntry> result = new ArrayList<>();
         int r2 = range * range;
         for (KillLogEntry entry : killLogs) {
-            if ((userFilter == null || entry.killerName.equalsIgnoreCase(userFilter)) &&
-                entry.pos.getSquaredDistance(center.getX(), center.getY(), center.getZ()) <= r2) {
+            boolean userMatch = true;
+            if (userFilter != null) {
+                if (filterByKiller) {
+                    userMatch = entry.killerName.equalsIgnoreCase(userFilter);
+                } else {
+                    userMatch = entry.victimName.equalsIgnoreCase(userFilter);
+                }
+            }
+            if (userMatch && entry.pos.getSquaredDistance(center.getX(), center.getY(), center.getZ()) <= r2) {
                 result.add(entry);
             }
         }
         return result;
+    }
+    // Deprecated: use the new method with filterByKiller
+    public static List<KillLogEntry> getKillLogsInRange(BlockPos center, int range, String userFilter) {
+        return getKillLogsInRange(center, range, userFilter, true);
     }
     public static List<LogEntry> getLogsInRange(BlockPos center, int range) {
         List<LogEntry> result = new ArrayList<>();
@@ -330,5 +343,28 @@ public class LogStorage {
         // Use BlockPos.ORIGIN (0,0,0) to mark inventory logs
         logs.add(new LogEntry(action, player.getName().getString(), BlockPos.ORIGIN, stack, Instant.now()));
         saveAllLogs();
+    }
+
+    // Inspector mode state tracking
+    private static final java.util.Set<java.util.UUID> inspectorPlayers = new java.util.HashSet<>();
+
+    public static void setInspectorMode(ServerPlayerEntity player, boolean enabled) {
+        if (enabled) {
+            inspectorPlayers.add(player.getUuid());
+        } else {
+            inspectorPlayers.remove(player.getUuid());
+        }
+    }
+
+    public static boolean isInspectorMode(ServerPlayerEntity player) {
+        return inspectorPlayers.contains(player.getUuid());
+    }
+
+    public static void toggleInspectorMode(ServerPlayerEntity player) {
+        if (isInspectorMode(player)) {
+            setInspectorMode(player, false);
+        } else {
+            setInspectorMode(player, true);
+        }
     }
 }

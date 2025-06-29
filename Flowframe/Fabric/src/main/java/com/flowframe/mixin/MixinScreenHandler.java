@@ -40,12 +40,18 @@ public abstract class MixinScreenHandler {
     private void flowframe$logSlotClickReturn(int slotIndex, int button, net.minecraft.screen.slot.SlotActionType actionType, PlayerEntity player, CallbackInfo ci) {
         ScreenHandler self = (ScreenHandler)(Object)this;
         if (flowframe$prevContainerState != null && self != null && self.slots.size() == flowframe$prevContainerState.length) {
-            BlockPos pos = player.getBlockPos();
             for (int i = 0; i < self.slots.size(); i++) {
                 Slot slot = self.getSlot(i);
                 // Only log if this slot belongs to the container, not the player inventory
                 if (slot.inventory == player.getInventory()) {
                     continue;
+                }
+                // Try to get the container position from the inventory if possible
+                BlockPos pos = null;
+                if (slot.inventory instanceof net.minecraft.block.entity.BlockEntity be) {
+                    pos = be.getPos();
+                } else {
+                    pos = player.getBlockPos(); // fallback, but should rarely happen
                 }
                 ItemStack before = flowframe$prevContainerState[i];
                 ItemStack after = slot.getStack();
