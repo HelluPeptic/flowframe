@@ -23,15 +23,15 @@ import me.lucko.fabric.api.permissions.v0.Permissions;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.registry.Registries;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.registry.Registry;
-import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.BlockPos;
 
 // Handles /flowframe minetracer commands (lookup, rollback)
 public class MineTracerCommand {
@@ -96,7 +96,7 @@ public class MineTracerCommand {
         // Suggest item IDs after include:
         if (last.startsWith("include:")) {
             String afterInclude = last.substring(8);
-            net.minecraft.registry.Registry<net.minecraft.item.Item> itemRegistry = net.minecraft.registry.Registries.ITEM;
+            net.minecraft.registry.Registry<net.minecraft.item.Item> itemRegistry = Registries.ITEM;
             for (net.minecraft.util.Identifier id : itemRegistry.getIds()) {
                 String idStr = id.toString();
                 if (idStr.toLowerCase().startsWith(afterInclude.toLowerCase())) {
@@ -177,6 +177,13 @@ public class MineTracerCommand {
         // For kill logs, filter by killer if action:kill, otherwise by victim
         boolean filterByKiller = actionFilter != null && actionFilter.equalsIgnoreCase("kill");
         List<LogStorage.KillLogEntry> killLogs = LogStorage.getKillLogsInRange(playerPos, range, userFilter, filterByKiller);
+        
+        // Apply user filter to container logs (the method doesn't accept userFilter parameter)
+        if (userFilter != null) {
+            final String userFilterFinal = userFilter;
+            containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
+        }
+        
         // Apply time filter
         if (cutoff != null) {
             final Instant cutoffFinal = cutoff;
@@ -200,7 +207,7 @@ public class MineTracerCommand {
         // Filter by include item if specified
         if (includeItem != null && !includeItem.isEmpty()) {
             final String includeItemFinal = includeItem;
-            containerLogs.removeIf(entry -> !net.minecraft.registry.Registries.ITEM.getId(entry.stack.getItem()).toString().equals(includeItemFinal));
+            containerLogs.removeIf(entry -> !Registries.ITEM.getId(entry.stack.getItem()).toString().equals(includeItemFinal));
         }
         // Flatten all logs into a single list with position
         List<FlatLogEntry> flatList = new ArrayList<>();
@@ -430,13 +437,21 @@ public class MineTracerCommand {
         // For kill logs, filter by killer if action:kill, otherwise by victim
         boolean filterByKiller = actionFilter != null && actionFilter.equalsIgnoreCase("kill");
         List<LogStorage.KillLogEntry> killLogs = LogStorage.getKillLogsInRange(playerPos, range, userFilter, filterByKiller);
-        // Apply time filter
+        
+        // Apply user filter to container logs (since getLogsInRange doesn't accept userFilter)
+        if (userFilter != null) {
+            final String userFilterFinal = userFilter;
+            containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
+        }
+        
+        // Apply time filter - rollback should only affect logs AFTER the cutoff time
+        // e.g., "time:1h" means rollback actions from the last 1 hour (keep entries after cutoff)
         if (cutoff != null) {
             final Instant cutoffFinal = cutoff;
-            blockLogs.removeIf(entry -> entry.timestamp.isAfter(cutoffFinal));
-            signLogs.removeIf(entry -> entry.timestamp.isAfter(cutoffFinal));
-            containerLogs.removeIf(entry -> entry.timestamp.isAfter(cutoffFinal));
-            killLogs.removeIf(entry -> entry.timestamp.isAfter(cutoffFinal));
+            blockLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
+            signLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
+            containerLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
+            killLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
         }
         // Filter out inventory logs unless action:inventory is present
         if (!"inventory".equals(actionFilter)) {
@@ -453,32 +468,105 @@ public class MineTracerCommand {
         // Filter by include item if specified
         if (includeItem != null && !includeItem.isEmpty()) {
             final String includeItemFinal = includeItem;
-            containerLogs.removeIf(entry -> !net.minecraft.registry.Registries.ITEM.getId(entry.stack.getItem()).toString().equals(includeItemFinal));
+            containerLogs.removeIf(entry -> !Registries.ITEM.getId(entry.stack.getItem()).toString().equals(includeItemFinal));
         }
-        // Flatten all logs into a single list with position
-        List<FlatLogEntry> flatList = new ArrayList<>();
-        for (LogStorage.BlockLogEntry entry : blockLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
-        for (LogStorage.SignLogEntry entry : signLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
-        for (LogStorage.LogEntry entry : containerLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
-        for (LogStorage.KillLogEntry entry : killLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
-        // Sort by timestamp descending
-        flatList.sort((a, b) -> {
-            Instant ta =
-                a.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)a.entry).timestamp :
-                a.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)a.entry).timestamp :
-                a.entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)a.entry).timestamp :
-                ((LogStorage.LogEntry)a.entry).timestamp;
-            Instant tb =
-                b.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)b.entry).timestamp :
-                b.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)b.entry).timestamp :
-                b.entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)b.entry).timestamp :
-                ((LogStorage.LogEntry)b.entry).timestamp;
-            return tb.compareTo(ta);
-        });
-        int entriesPerPage = 5; // Reduced from 10 to 5 for less logs per page
-        lastQueries.put(source.getPlayer().getUuid(), new QueryContext(flatList, entriesPerPage));
-        // Show first page
-        return showRollbackPage(source, flatList, 1, entriesPerPage);
+
+        // ACTUAL ROLLBACK IMPLEMENTATION
+        int successfulRollbacks = 0;
+        int failedRollbacks = 0;
+        ServerWorld world = source.getWorld();
+
+        // Inform user about rollback scope
+        if (containerLogs.isEmpty()) {
+            source.sendFeedback(() -> Text.literal("[MineTracer] No withdrawal actions found matching the specified filters.").formatted(Formatting.YELLOW), false);
+            return Command.SINGLE_SUCCESS;
+        }
+        
+        source.sendFeedback(() -> Text.literal("[MineTracer] Found " + containerLogs.size() + " withdrawal actions to rollback.").formatted(Formatting.AQUA), false);
+
+        // Process withdrawal rollbacks
+        for (LogStorage.LogEntry entry : containerLogs) {
+            if ("withdrew".equals(entry.action)) {
+                if (performWithdrawalRollback(world, entry)) {
+                    successfulRollbacks++;
+                } else {
+                    failedRollbacks++;
+                }
+            }
+        }
+
+        // Send feedback about rollback results
+        if (successfulRollbacks > 0 || failedRollbacks > 0) {
+            final int finalSuccessfulRollbacks = successfulRollbacks;
+            final int finalFailedRollbacks = failedRollbacks;
+            source.sendFeedback(() -> Text.literal(
+                "[MineTracer] Rollback complete: " + finalSuccessfulRollbacks + " withdrawals restored, " + 
+                finalFailedRollbacks + " failed."
+            ).formatted(Formatting.GREEN), false);
+        } else {
+            source.sendFeedback(() -> Text.literal("[MineTracer] No withdrawal actions found to rollback.").formatted(Formatting.YELLOW), false);
+        }
+
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static boolean performWithdrawalRollback(ServerWorld world, LogStorage.LogEntry entry) {
+        try {
+            BlockPos pos = entry.pos;
+            ItemStack stackToRestore = entry.stack.copy();
+
+            // Check if there's a container at this position
+            net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
+            if (blockEntity instanceof Inventory) {
+                Inventory inventory = (Inventory) blockEntity;
+                // Try to add the item back to the container
+                ItemStack remaining = addItemToInventory(inventory, stackToRestore);
+                
+                // Mark the inventory as changed so the game updates it
+                inventory.markDirty();
+                
+                // Return true if we successfully added at least some of the stack
+                return remaining.getCount() < stackToRestore.getCount();
+            }
+            return false;
+        } catch (RuntimeException e) {
+            System.err.println("[MineTracer] Error during withdrawal rollback: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static ItemStack addItemToInventory(Inventory inventory, ItemStack stack) {
+        ItemStack remaining = stack.copy();
+        
+        // First pass: try to stack with existing items
+        for (int i = 0; i < inventory.size() && !remaining.isEmpty(); i++) {
+            ItemStack existingStack = inventory.getStack(i);
+            if (!existingStack.isEmpty() && ItemStack.canCombine(existingStack, remaining)) {
+                int maxStackSize = existingStack.getMaxCount();
+                int canAdd = maxStackSize - existingStack.getCount();
+                if (canAdd > 0) {
+                    int toAdd = Math.min(canAdd, remaining.getCount());
+                    existingStack.increment(toAdd);
+                    remaining.decrement(toAdd);
+                    inventory.setStack(i, existingStack);
+                }
+            }
+        }
+        
+        // Second pass: try to place in empty slots
+        for (int i = 0; i < inventory.size() && !remaining.isEmpty(); i++) {
+            ItemStack existingStack = inventory.getStack(i);
+            if (existingStack.isEmpty()) {
+                int maxStackSize = remaining.getMaxCount();
+                int toPlace = Math.min(maxStackSize, remaining.getCount());
+                ItemStack toSet = remaining.copy();
+                toSet.setCount(toPlace);
+                inventory.setStack(i, toSet);
+                remaining.decrement(toPlace);
+            }
+        }
+        
+        return remaining;
     }
 
     public static int rollbackPage(CommandContext<ServerCommandSource> ctx) {

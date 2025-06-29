@@ -4,6 +4,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.server.network.ServerPlayerEntity;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,7 +20,6 @@ import java.util.Map;
 import com.google.gson.TypeAdapter;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
-import net.minecraft.server.network.ServerPlayerEntity;
 
 // Handles storage of all logs in a single file
 public class LogStorage {
@@ -89,6 +89,12 @@ public class LogStorage {
     private static final List<SignLogEntry> signLogs = new ArrayList<>();
     private static final List<KillLogEntry> killLogs = new ArrayList<>();
     private static final Path LOG_FILE = Path.of("config", "flowframe", "minetracer", "logs.json");
+    
+    // Batching system for improved performance
+    private static final Object saveLock = new Object();
+    private static volatile boolean hasUnsavedChanges = false;
+    private static volatile boolean isShuttingDown = false;
+    private static java.util.concurrent.ScheduledExecutorService saveScheduler;
     private static final Gson GSON = new GsonBuilder()
         .setPrettyPrinting()
         .registerTypeAdapter(java.time.Instant.class, new TypeAdapter<java.time.Instant>() {
@@ -104,86 +110,144 @@ public class LogStorage {
         .create();
 
     private static void loadAllLogs() {
-        logs.clear();
-        blockLogs.clear();
-        signLogs.clear();
-        killLogs.clear();
-        try {
-            Files.createDirectories(LOG_FILE.getParent());
-            if (Files.exists(LOG_FILE)) {
-                String json = Files.readString(LOG_FILE, StandardCharsets.UTF_8);
-                Type type = new TypeToken<Map<String, Object>>(){}.getType();
-                Map<String, Object> allLogs = GSON.fromJson(json, type);
-                if (allLogs != null) {
-                    // Container logs
-                    List<Map<String, Object>> containerList = (List<Map<String, Object>>) allLogs.getOrDefault("container", new ArrayList<>());
-                    for (Map<String, Object> obj : containerList) {
-                        String[] posParts = ((String)obj.get("pos")).split(",");
-                        BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]), Integer.parseInt(posParts[2]));
-                        try {
-                            net.minecraft.nbt.NbtCompound nbt = net.minecraft.nbt.StringNbtReader.parse((String)obj.get("itemNbt"));
-                            ItemStack stack = ItemStack.fromNbt(nbt);
-                            logs.add(new LogEntry((String)obj.get("action"), (String)obj.get("playerName"), pos, stack, java.time.Instant.parse((String)obj.get("timestamp"))));
-                        } catch (Exception nbtEx) { nbtEx.printStackTrace(); }
-                    }
-                    // Block logs
-                    List<Map<String, Object>> blockList = (List<Map<String, Object>>) allLogs.getOrDefault("block", new ArrayList<>());
-                    for (Map<String, Object> obj : blockList) {
-                        String[] posParts = ((String)obj.get("pos")).split(",");
-                        BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]), Integer.parseInt(posParts[2]));
-                        blockLogs.add(new BlockLogEntry((String)obj.get("action"), (String)obj.get("playerName"), pos, (String)obj.get("blockId"), (String)obj.get("nbt"), java.time.Instant.parse((String)obj.get("timestamp"))));
-                    }
-                    // Sign logs
-                    List<Map<String, Object>> signList = (List<Map<String, Object>>) allLogs.getOrDefault("sign", new ArrayList<>());
-                    for (Map<String, Object> obj : signList) {
-                        String[] posParts = ((String)obj.get("pos")).split(",");
-                        BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]), Integer.parseInt(posParts[2]));
-                        signLogs.add(new SignLogEntry((String)obj.get("action"), (String)obj.get("playerName"), pos, (String)obj.get("text"), (String)obj.get("nbt"), java.time.Instant.parse((String)obj.get("timestamp"))));
-                    }
-                    // Kill logs
-                    List<Map<String, Object>> killList = (List<Map<String, Object>>) allLogs.getOrDefault("kill", new ArrayList<>());
-                    for (Map<String, Object> obj : killList) {
-                        String[] posParts = ((String)obj.get("pos")).split(",");
-                        BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]), Integer.parseInt(posParts[2]));
-                        killLogs.add(new KillLogEntry((String)obj.get("killerName"), (String)obj.get("victimName"), pos, (String)obj.get("world"), java.time.Instant.parse((String)obj.get("timestamp"))));
+        synchronized (saveLock) {
+            logs.clear();
+            blockLogs.clear();
+            signLogs.clear();
+            killLogs.clear();
+            try {
+                Files.createDirectories(LOG_FILE.getParent());
+                if (Files.exists(LOG_FILE)) {
+                    String json = Files.readString(LOG_FILE, StandardCharsets.UTF_8);
+                    Type type = new TypeToken<Map<String, Object>>(){}.getType();
+                    Map<String, Object> allLogs = GSON.fromJson(json, type);
+                    if (allLogs != null) {
+                        // Container logs
+                        List<Map<String, Object>> containerList = (List<Map<String, Object>>) allLogs.getOrDefault("container", new ArrayList<>());
+                        for (Map<String, Object> obj : containerList) {
+                            String[] posParts = ((String)obj.get("pos")).split(",");
+                            BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]), Integer.parseInt(posParts[2]));
+                            try {
+                                net.minecraft.nbt.NbtCompound nbt = net.minecraft.nbt.StringNbtReader.parse((String)obj.get("itemNbt"));
+                                ItemStack stack = ItemStack.fromNbt(nbt);
+                                logs.add(new LogEntry((String)obj.get("action"), (String)obj.get("playerName"), pos, stack, java.time.Instant.parse((String)obj.get("timestamp"))));
+                            } catch (Exception nbtEx) { nbtEx.printStackTrace(); }
+                        }
+                        // Block logs
+                        List<Map<String, Object>> blockList = (List<Map<String, Object>>) allLogs.getOrDefault("block", new ArrayList<>());
+                        for (Map<String, Object> obj : blockList) {
+                            String[] posParts = ((String)obj.get("pos")).split(",");
+                            BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]), Integer.parseInt(posParts[2]));
+                            blockLogs.add(new BlockLogEntry((String)obj.get("action"), (String)obj.get("playerName"), pos, (String)obj.get("blockId"), (String)obj.get("nbt"), java.time.Instant.parse((String)obj.get("timestamp"))));
+                        }
+                        // Sign logs
+                        List<Map<String, Object>> signList = (List<Map<String, Object>>) allLogs.getOrDefault("sign", new ArrayList<>());
+                        for (Map<String, Object> obj : signList) {
+                            String[] posParts = ((String)obj.get("pos")).split(",");
+                            BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]), Integer.parseInt(posParts[2]));
+                            signLogs.add(new SignLogEntry((String)obj.get("action"), (String)obj.get("playerName"), pos, (String)obj.get("text"), (String)obj.get("nbt"), java.time.Instant.parse((String)obj.get("timestamp"))));
+                        }
+                        // Kill logs
+                        List<Map<String, Object>> killList = (List<Map<String, Object>>) allLogs.getOrDefault("kill", new ArrayList<>());
+                        for (Map<String, Object> obj : killList) {
+                            String[] posParts = ((String)obj.get("pos")).split(",");
+                            BlockPos pos = new BlockPos(Integer.parseInt(posParts[0]), Integer.parseInt(posParts[1]), Integer.parseInt(posParts[2]));
+                            killLogs.add(new KillLogEntry((String)obj.get("killerName"), (String)obj.get("victimName"), pos, (String)obj.get("world"), java.time.Instant.parse((String)obj.get("timestamp"))));
+                        }
                     }
                 }
+                hasUnsavedChanges = false;
+                System.out.println("[MineTracer] Loaded " + 
+                    (logs.size() + blockLogs.size() + signLogs.size() + killLogs.size()) + 
+                    " log entries from disk");
+            } catch (Exception e) { 
+                System.err.println("[MineTracer] Failed to load logs: " + e.getMessage());
+                e.printStackTrace(); 
             }
-        } catch (Exception e) { e.printStackTrace(); }
+        }
+    }
+
+    // Public method to force immediate save (for critical situations)
+    public static void forceSave() {
+        saveAllLogsNow();
     }
 
     // Register server lifecycle hooks for loading/saving logs
     public static void registerServerLifecycle() {
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTING.register(server -> {
             loadAllLogs();
+            startPeriodicSaving();
             com.flowframe.features.minetracer.KillLogger.register(); // Register kill logging
         });
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
-            saveAllLogs();
+            isShuttingDown = true;
+            stopPeriodicSaving();
+            saveAllLogsNow(); // Final save on shutdown
         });
     }
 
+    // Start the periodic saving task
+    private static void startPeriodicSaving() {
+        if (saveScheduler == null || saveScheduler.isShutdown()) {
+            saveScheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "MineTracer-LogSaver");
+                t.setDaemon(true); // Don't prevent JVM shutdown
+                return t;
+            });
+            
+            // Save every 30 seconds if there are unsaved changes
+            saveScheduler.scheduleWithFixedDelay(() -> {
+                if (hasUnsavedChanges && !isShuttingDown) {
+                    saveAllLogsNow();
+                }
+            }, 30, 30, java.util.concurrent.TimeUnit.SECONDS);
+        }
+    }
+
+    // Stop the periodic saving task
+    private static void stopPeriodicSaving() {
+        if (saveScheduler != null && !saveScheduler.isShutdown()) {
+            saveScheduler.shutdown();
+            try {
+                if (!saveScheduler.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                    saveScheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                saveScheduler.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
     public static void logContainerAction(String action, PlayerEntity player, BlockPos pos, ItemStack stack) {
-        logs.add(new LogEntry(action, player.getName().getString(), pos, stack, Instant.now()));
-        saveAllLogs();
+        synchronized (saveLock) {
+            logs.add(new LogEntry(action, player.getName().getString(), pos, stack, Instant.now()));
+            hasUnsavedChanges = true;
+        }
     }
 
     public static void logBlockAction(String action, PlayerEntity player, BlockPos pos, String blockId, String nbt) {
-        BlockLogEntry entry = new BlockLogEntry(action, player.getName().getString(), pos, blockId, nbt, Instant.now());
-        blockLogs.add(entry);
-        saveAllLogs();
+        synchronized (saveLock) {
+            BlockLogEntry entry = new BlockLogEntry(action, player.getName().getString(), pos, blockId, nbt, Instant.now());
+            blockLogs.add(entry);
+            hasUnsavedChanges = true;
+        }
     }
 
     public static void logSignAction(String action, PlayerEntity player, BlockPos pos, String text, String nbt) {
-        String playerName = player != null ? player.getName().getString() : "unknown";
-        SignLogEntry entry = new SignLogEntry(action, playerName, pos, text, nbt, Instant.now());
-        signLogs.add(entry);
-        saveAllLogs();
+        synchronized (saveLock) {
+            String playerName = player != null ? player.getName().getString() : "unknown";
+            SignLogEntry entry = new SignLogEntry(action, playerName, pos, text, nbt, Instant.now());
+            signLogs.add(entry);
+            hasUnsavedChanges = true;
+        }
     }
 
     public static void logKillAction(String killerName, String victimName, BlockPos pos, String world) {
-        killLogs.add(new KillLogEntry(killerName, victimName, pos, world, Instant.now()));
-        saveAllLogs();
+        synchronized (saveLock) {
+            killLogs.add(new KillLogEntry(killerName, victimName, pos, world, Instant.now()));
+            hasUnsavedChanges = true;
+        }
     }
 
     public static List<String> getAllPlayerNames() {
@@ -318,31 +382,49 @@ public class LogStorage {
         }
     }
 
-    private static void saveAllLogs() {
-        try {
-            Files.createDirectories(LOG_FILE.getParent());
-            Map<String, Object> allLogs = new HashMap<>();
-            List<Object> containerList = new ArrayList<>();
-            for (LogEntry entry : logs) containerList.add(new LogEntryJson(entry));
-            allLogs.put("container", containerList);
-            List<Object> blockList = new ArrayList<>();
-            for (BlockLogEntry entry : blockLogs) blockList.add(new BlockLogEntryJson(entry));
-            allLogs.put("block", blockList);
-            List<Object> signList = new ArrayList<>();
-            for (SignLogEntry entry : signLogs) signList.add(new SignLogEntryJson(entry));
-            allLogs.put("sign", signList);
-            List<Object> killList = new ArrayList<>();
-            for (KillLogEntry entry : killLogs) killList.add(new KillLogEntryJson(entry));
-            allLogs.put("kill", killList);
-            String json = GSON.toJson(allLogs);
-            Files.writeString(LOG_FILE, json, StandardCharsets.UTF_8);
-        } catch (Exception e) { e.printStackTrace(); }
+    private static void saveAllLogsNow() {
+        synchronized (saveLock) {
+            if (!hasUnsavedChanges && !isShuttingDown) {
+                return; // Nothing to save
+            }
+            
+            try {
+                Files.createDirectories(LOG_FILE.getParent());
+                Map<String, Object> allLogs = new HashMap<>();
+                List<Object> containerList = new ArrayList<>();
+                for (LogEntry entry : logs) containerList.add(new LogEntryJson(entry));
+                allLogs.put("container", containerList);
+                List<Object> blockList = new ArrayList<>();
+                for (BlockLogEntry entry : blockLogs) blockList.add(new BlockLogEntryJson(entry));
+                allLogs.put("block", blockList);
+                List<Object> signList = new ArrayList<>();
+                for (SignLogEntry entry : signLogs) signList.add(new SignLogEntryJson(entry));
+                allLogs.put("sign", signList);
+                List<Object> killList = new ArrayList<>();
+                for (KillLogEntry entry : killLogs) killList.add(new KillLogEntryJson(entry));
+                allLogs.put("kill", killList);
+                String json = GSON.toJson(allLogs);
+                Files.writeString(LOG_FILE, json, StandardCharsets.UTF_8);
+                hasUnsavedChanges = false;
+                
+                if (!isShuttingDown) {
+                    System.out.println("[MineTracer] Saved " + 
+                        (logs.size() + blockLogs.size() + signLogs.size() + killLogs.size()) + 
+                        " log entries to disk");
+                }
+            } catch (Exception e) { 
+                System.err.println("[MineTracer] Failed to save logs: " + e.getMessage());
+                e.printStackTrace(); 
+            }
+        }
     }
 
     public static void logInventoryAction(String action, PlayerEntity player, ItemStack stack) {
-        // Use BlockPos.ORIGIN (0,0,0) to mark inventory logs
-        logs.add(new LogEntry(action, player.getName().getString(), BlockPos.ORIGIN, stack, Instant.now()));
-        saveAllLogs();
+        synchronized (saveLock) {
+            // Use BlockPos.ORIGIN (0,0,0) to mark inventory logs
+            logs.add(new LogEntry(action, player.getName().getString(), BlockPos.ORIGIN, stack, Instant.now()));
+            hasUnsavedChanges = true;
+        }
     }
 
     // Inspector mode state tracking
