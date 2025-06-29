@@ -1,32 +1,37 @@
 package com.flowframe.features.minetracer;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
-import java.util.concurrent.CompletableFuture;
-import java.util.List;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.util.Formatting;
-import net.minecraft.text.Text;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.HashMap;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import com.google.gson.JsonElement;
-import java.util.ArrayList;
+import java.util.concurrent.CompletableFuture;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import me.lucko.fabric.api.permissions.v0.Permissions;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.minecraft.inventory.Inventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.registry.Registry;
+import net.minecraft.registry.Registries;
+import net.minecraft.util.Identifier;
 
 // Handles /flowframe minetracer commands (lookup, rollback)
 public class MineTracerCommand {
@@ -35,30 +40,34 @@ public class MineTracerCommand {
             dispatcher.register(CommandManager.literal("flowframe")
                 .then(CommandManager.literal("minetracer")
                     .then(CommandManager.literal("lookup")
+                        .requires(source -> Permissions.check(source, "flowframe.command.minetracer.lookup", 2))
                         .then(CommandManager.argument("arg", StringArgumentType.greedyString())
                             .suggests(MineTracerCommand::suggestPlayers)
                             .executes(MineTracerCommand::lookup)
                         )
                     )
                     .then(CommandManager.literal("rollback")
+                        .requires(source -> Permissions.check(source, "flowframe.command.minetracer.rollback", 2))
                         .then(CommandManager.argument("arg", StringArgumentType.greedyString())
                             .suggests(MineTracerCommand::suggestPlayers)
                             .executes(MineTracerCommand::rollback)
                         )
                     )
                     .then(CommandManager.literal("page")
+                        .requires(source -> Permissions.check(source, "flowframe.command.minetracer.page", 2))
                         .then(CommandManager.argument("page", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
                             .executes(MineTracerCommand::lookupPage)
                         )
                     )
                     .then(CommandManager.literal("inspect")
+                        .requires(source -> Permissions.check(source, "flowframe.command.minetracer.inspect", 2))
                         .executes(ctx -> {
                             ServerCommandSource source = ctx.getSource();
                             if (source.getPlayer() == null) {
                                 source.sendError(Text.literal("This command can only be used by a player."));
                                 return 0;
                             }
-                            var player = source.getPlayer();
+                            ServerPlayerEntity player = source.getPlayer();
                             LogStorage.toggleInspectorMode(player);
                             boolean enabled = LogStorage.isInspectorMode(player);
                             source.sendFeedback(() -> Text.literal("Inspector mode " + (enabled ? "enabled" : "disabled") + ".").formatted(enabled ? Formatting.GREEN : Formatting.RED), false);
@@ -108,7 +117,7 @@ public class MineTracerCommand {
     }
 
     // Store last query for each player (UUID -> QueryContext)
-    private static final Map<UUID, QueryContext> lastQueries = new HashMap<>();
+    private static final Map<UUID, QueryContext> lastQueries = new java.util.HashMap<>();
     private static class FlatLogEntry {
         public final BlockPos pos;
         public final Object entry;
@@ -127,8 +136,12 @@ public class MineTracerCommand {
     }
 
     public static int lookup(CommandContext<ServerCommandSource> ctx) {
-        String arg = StringArgumentType.getString(ctx, "arg");
         ServerCommandSource source = ctx.getSource();
+        if (!Permissions.check(source, "flowframe.command.minetracer.lookup", 2)) {
+            source.sendError(Text.literal("You do not have permission to use this command."));
+            return 0;
+        }
+        String arg = StringArgumentType.getString(ctx, "arg");
         String userFilter = null;
         String timeArg = null;
         int range = 100;
@@ -259,7 +272,8 @@ public class MineTracerCommand {
             entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)entry).timestamp :
             ((LogStorage.LogEntry)entry).timestamp
         );
-        if (entry instanceof LogStorage.BlockLogEntry be) {
+        if (entry instanceof LogStorage.BlockLogEntry) {
+            LogStorage.BlockLogEntry be = (LogStorage.BlockLogEntry) entry;
             String actionStr = be.action;
             Formatting color;
             if ("broke".equals(actionStr)) {
@@ -276,7 +290,8 @@ public class MineTracerCommand {
                 .append(Text.literal(" " + actionStr + " ").formatted(color))
                 .append(Text.literal("#" + be.blockId).formatted(Formatting.YELLOW))
                 .append(Text.literal(" (" + getBlockName(be.blockId) + ").").formatted(Formatting.GRAY));
-        } else if (entry instanceof LogStorage.SignLogEntry se) {
+        } else if (entry instanceof LogStorage.SignLogEntry) {
+            LogStorage.SignLogEntry se = (LogStorage.SignLogEntry) entry;
             // Parse before/after from nbt JSON robustly
             String prevMsg = null;
             String newMsg = null;
@@ -344,7 +359,8 @@ public class MineTracerCommand {
                 .append(Text.literal(se.playerName).formatted(Formatting.AQUA))
                 .append(Text.literal(" edited sign:").formatted(Formatting.YELLOW))
                 .append(Text.literal("\n" + diffMsg));
-        } else if (entry instanceof LogStorage.LogEntry ce) {
+        } else if (entry instanceof LogStorage.LogEntry) {
+            LogStorage.LogEntry ce = (LogStorage.LogEntry) entry;
             String desc;
             String containerName = "container";
             String itemStr = (ce.stack.getCount() > 1 ? "#" + ce.stack.getCount() + " " : "") + ce.stack.getName().getString();
@@ -362,7 +378,8 @@ public class MineTracerCommand {
                 .append(Text.literal(ce.playerName).formatted(Formatting.AQUA))
                 .append(Text.literal(" " + desc).formatted(color))
                 .append(Text.literal(".").formatted(Formatting.GRAY));
-        } else if (entry instanceof LogStorage.KillLogEntry ke) {
+        } else if (entry instanceof LogStorage.KillLogEntry) {
+            LogStorage.KillLogEntry ke = (LogStorage.KillLogEntry) entry;
             Formatting color = ke.victimName.startsWith("Player") ? Formatting.RED : Formatting.YELLOW;
             return Text.literal(timeAgo + " ago - ")
                 .append(Text.literal(ke.killerName).formatted(Formatting.AQUA))
@@ -375,8 +392,12 @@ public class MineTracerCommand {
     }
 
     public static int rollback(CommandContext<ServerCommandSource> ctx) {
-        String arg = StringArgumentType.getString(ctx, "arg");
         ServerCommandSource source = ctx.getSource();
+        if (!Permissions.check(source, "flowframe.command.minetracer.rollback", 2)) {
+            source.sendError(Text.literal("You do not have permission to use this command."));
+            return 0;
+        }
+        String arg = StringArgumentType.getString(ctx, "arg");
         String userFilter = null;
         String timeArg = null;
         int range = 100;

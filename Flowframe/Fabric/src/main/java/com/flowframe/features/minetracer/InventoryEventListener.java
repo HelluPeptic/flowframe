@@ -13,10 +13,9 @@ public class InventoryEventListener {
     public static void onPlayerTick(PlayerEntity player) {
         // Check for picked up items
         for (ItemStack stack : player.getInventory().main) {
-            if (!stack.isEmpty() && stack.getOrCreateNbt().getBoolean("flowframe_logged_pickup") == false) {
+            if (!stack.isEmpty()) {
                 BlockPos pos = player.getBlockPos();
                 LogStorage.logContainerAction("inventory", player, pos, stack);
-                stack.getOrCreateNbt().putBoolean("flowframe_logged_pickup", true);
             }
         }
         // For item drops, you would need to Mixin into the drop method and call LogStorage.logContainerAction("inventory", ...)
