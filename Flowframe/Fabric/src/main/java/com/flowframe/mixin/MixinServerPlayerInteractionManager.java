@@ -40,8 +40,28 @@ public class MixinServerPlayerInteractionManager {
         if (placedState.isAir() || (prevState != null && placedState.getBlock() == prevState.getBlock())) return;
         Identifier blockId = Registries.BLOCK.getId(placedState.getBlock());
         net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(placedPos);
-        String nbt = blockEntity != null ? blockEntity.createNbt().toString() : null;
-        LogStorage.logBlockAction("place", player, placedPos, blockId.toString(), nbt);
+        
+        // Create NBT compound that includes both block state properties and block entity data
+        net.minecraft.nbt.NbtCompound fullNbt = new net.minecraft.nbt.NbtCompound();
+        
+        // Store block state properties
+        if (!placedState.getProperties().isEmpty()) {
+            net.minecraft.nbt.NbtCompound propertiesNbt = new net.minecraft.nbt.NbtCompound();
+            for (net.minecraft.state.property.Property<?> property : placedState.getProperties()) {
+                String propertyName = property.getName();
+                String propertyValue = placedState.get(property).toString();
+                propertiesNbt.putString(propertyName, propertyValue);
+            }
+            fullNbt.put("Properties", propertiesNbt);
+        }
+        
+        // Store block entity data if present
+        if (blockEntity != null) {
+            fullNbt.put("BlockEntityTag", blockEntity.createNbt());
+        }
+        
+        String nbt = fullNbt.isEmpty() ? null : fullNbt.toString();
+        LogStorage.logBlockAction("placed", player, placedPos, blockId.toString(), nbt);
         if (blockEntity instanceof net.minecraft.block.entity.SignBlockEntity) {
             net.minecraft.block.entity.SignBlockEntity sign = (net.minecraft.block.entity.SignBlockEntity) blockEntity;
             // Extract all visible lines as plain text
@@ -54,7 +74,7 @@ public class MixinServerPlayerInteractionManager {
                 }
             }
             String beforeText = GSON.toJson(lines);
-            LogStorage.logSignAction("place", player, placedPos, beforeText, sign.createNbt().toString());
+            LogStorage.logSignAction("placed", player, placedPos, beforeText, sign.createNbt().toString());
         }
     }
     @org.spongepowered.asm.mixin.Unique
@@ -68,7 +88,27 @@ public class MixinServerPlayerInteractionManager {
         if (state.isAir()) return;
         Identifier blockId = Registries.BLOCK.getId(state.getBlock());
         BlockEntity blockEntity = world.getBlockEntity(pos);
-        String nbt = blockEntity != null ? blockEntity.createNbt().toString() : null;
+        
+        // Create NBT compound that includes both block state properties and block entity data
+        net.minecraft.nbt.NbtCompound fullNbt = new net.minecraft.nbt.NbtCompound();
+        
+        // Store block state properties
+        if (!state.getProperties().isEmpty()) {
+            net.minecraft.nbt.NbtCompound propertiesNbt = new net.minecraft.nbt.NbtCompound();
+            for (net.minecraft.state.property.Property<?> property : state.getProperties()) {
+                String propertyName = property.getName();
+                String propertyValue = state.get(property).toString();
+                propertiesNbt.putString(propertyName, propertyValue);
+            }
+            fullNbt.put("Properties", propertiesNbt);
+        }
+        
+        // Store block entity data if present
+        if (blockEntity != null) {
+            fullNbt.put("BlockEntityTag", blockEntity.createNbt());
+        }
+        
+        String nbt = fullNbt.isEmpty() ? null : fullNbt.toString();
         LogStorage.logBlockAction("broke", player, pos, blockId.toString(), nbt);
         if (blockEntity instanceof SignBlockEntity) {
             SignBlockEntity sign = (SignBlockEntity) blockEntity;

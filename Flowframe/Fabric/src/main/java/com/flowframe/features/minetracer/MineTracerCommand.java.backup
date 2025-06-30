@@ -5,7 +5,9 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import java.time.Duration;
@@ -15,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import me.lucko.fabric.api.permissions.v0.Permissions;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.inventory.Inventory;
@@ -55,36 +59,47 @@ public class MineTracerCommand {
                             .executes(MineTracerCommand::lookupPage)
                         )
                     )
-                    .then(CommandManager.literal("rollbackpage")
-                        .requires(source -> Permissions.check(source, "flowframe.command.minetracer.rollback", 2))
-                        .then(CommandManager.argument("page", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1))
-                            .executes(MineTracerCommand::rollbackPage)
-                        )
-                    )
-                    .then(CommandManager.literal("inspector")
-                        .requires(source -> Permissions.check(source, "flowframe.command.minetracer.inspector", 2))
-                        .executes(MineTracerCommand::toggleInspector)
+                    .then(CommandManager.literal("inspect")
+                        .requires(source -> Permissions.check(source, "flowframe.command.minetracer.inspect", 2))
+                        .executes(ctx -> {
+                            ServerCommandSource source = ctx.getSource();
+                            if (source.getPlayer() == null) {
+                                source.sendError(Text.literal("This command can only be used by a player."));
+                                return 0;
+                            }
+                            ServerPlayerEntity player = source.getPlayer();
+                            LogStorage.toggleInspectorMode(player);
+                            boolean enabled = LogStorage.isInspectorMode(player);
+                            source.sendFeedback(() -> Text.literal("Inspector mode " + (enabled ? "enabled" : "disabled") + ".").formatted(enabled ? Formatting.GREEN : Formatting.RED), false);
+                            return Command.SINGLE_SUCCESS;
+                        })
                     )
                 )
             );
         });
     }
 
-    public static CompletableFuture<Suggestions> suggestPlayers(CommandContext<ServerCommandSource> ctx, SuggestionsBuilder builder) {
+    private static CompletableFuture<Suggestions> suggestPlayers(CommandContext<ServerCommandSource> ctx, SuggestionsBuilder builder) {
         String input = builder.getInput();
-        String[] parts = input.split(" ");
-        String last = parts[parts.length - 1];
+        int start = builder.getStart();
+        String[] parts = input.substring(start).split(" ");
+        String last = parts.length > 0 ? parts[parts.length - 1] : "";
+        int lastStart = input.lastIndexOf(last);
+        SuggestionsBuilder subBuilder = builder.createOffset(lastStart);
 
-        // If the last part is empty (after a space) or doesn't contain a colon, show base filter suggestions
-        if (last.isEmpty() || !last.contains(":")) {
-            // Get base suggestions for filters not already used
-            if (!input.contains("user:")) builder.suggest("user:");
-            if (!input.contains("time:")) builder.suggest("time:");
-            if (!input.contains("action:")) builder.suggest("action:");
-            if (!input.contains("range:")) builder.suggest("range:");
-            if (!input.contains("include:")) builder.suggest("include:");
+        // Check if we're currently typing an incomplete filter value
+        boolean isTypingFilterValue = last.startsWith("user:") || last.startsWith("action:") || 
+                                     last.startsWith("include:") || last.startsWith("time:") || 
+                                     last.startsWith("range:");
+
+        // If the last part is empty or we're not typing a filter value, suggest available filters
+        if (last.isEmpty() || !isTypingFilterValue) {
+            if (!input.contains("user:")) subBuilder.suggest("user:");
+            if (!input.contains("time:")) subBuilder.suggest("time:");
+            if (!input.contains("action:")) subBuilder.suggest("action:");
+            if (!input.contains("range:")) subBuilder.suggest("range:");
+            if (!input.contains("include:")) subBuilder.suggest("include:");
         }
-
         // Suggest player names after user: (only if incomplete)
         else if (last.startsWith("user:")) {
             String afterUser = last.substring(5);
@@ -101,97 +116,81 @@ public class MineTracerCommand {
                 for (ServerPlayerEntity player : ctx.getSource().getServer().getPlayerManager().getPlayerList()) {
                     String playerName = player.getName().getString();
                     if (playerName.toLowerCase().startsWith(afterUser.toLowerCase())) {
-                        builder.suggest("user:" + playerName);
+                        subBuilder.suggest("user:" + playerName);
                     }
                 }
             }
         }
-
         // Suggest action types after action: (only if incomplete)
         else if (last.startsWith("action:")) {
             String afterAction = last.substring(7);
-            // Check if we're after a comma (suggesting additional actions)
-            int lastCommaIndex = afterAction.lastIndexOf(',');
-            String currentAction = lastCommaIndex >= 0 ? afterAction.substring(lastCommaIndex + 1) : afterAction;
-            
-            boolean hasCompleteAction = false;
             String[] actions = {"withdrew", "deposited", "broke", "placed", "sign", "kill"};
             
-            // Check if current action is complete
+            // Check if we're after a comma (suggesting additional actions)
+            int lastCommaIndex = afterAction.lastIndexOf(',');
             if (lastCommaIndex >= 0) {
-                // We're suggesting an additional action after a comma
+                // We're suggesting additional actions after a comma
+                String prefix = afterAction.substring(0, lastCommaIndex + 1); // Include the comma
+                String currentAction = afterAction.substring(lastCommaIndex + 1);
+                
+                // Get already used actions
+                String[] usedActions = afterAction.substring(0, lastCommaIndex).split(",");
+                java.util.Set<String> usedSet = new java.util.HashSet<>(java.util.Arrays.asList(usedActions));
+                
                 for (String action : actions) {
-                    if (currentAction.equals(action)) {
-                        hasCompleteAction = true;
-                        break;
+                    if (!usedSet.contains(action) && action.toLowerCase().startsWith(currentAction.toLowerCase())) {
+                        subBuilder.suggest("action:" + prefix + action);
                     }
                 }
             } else {
-                // We're suggesting the first/only action
+                // We're suggesting the first action or completing the current one
+                boolean hasCompleteAction = false;
                 for (String action : actions) {
                     if (afterAction.equals(action)) {
                         hasCompleteAction = true;
                         break;
                     }
                 }
-            }
-            
-            if (!hasCompleteAction) {
-                // Suggest matching actions
-                for (String action : actions) {
-                    if (action.toLowerCase().startsWith(currentAction.toLowerCase())) {
-                        if (lastCommaIndex >= 0) {
-                            // Suggesting additional action after comma
-                            String prefix = afterAction.substring(0, lastCommaIndex + 1);
-                            builder.suggest("action:" + prefix + action);
-                        } else {
-                            // Suggesting first action
-                            builder.suggest("action:" + action);
+                if (!hasCompleteAction) {
+                    for (String action : actions) {
+                        if (action.toLowerCase().startsWith(afterAction.toLowerCase())) {
+                            subBuilder.suggest("action:" + action);
                         }
                     }
                 }
             }
         }
-
         // Suggest item IDs after include: (only if incomplete)
         else if (last.startsWith("include:")) {
             String afterInclude = last.substring(8);
-            if (!afterInclude.contains(":")) {
-                // Suggest some common item namespaces or IDs
-                for (Identifier id : Registries.ITEM.getIds()) {
-                    String idStr = id.toString();
-                    if (idStr.toLowerCase().startsWith(afterInclude.toLowerCase())) {
-                        builder.suggest("include:" + idStr);
-                    }
+            net.minecraft.registry.Registry<net.minecraft.item.Item> itemRegistry = Registries.ITEM;
+            for (net.minecraft.util.Identifier id : itemRegistry.getIds()) {
+                String idStr = id.toString();
+                if (idStr.toLowerCase().startsWith(afterInclude.toLowerCase())) {
+                    subBuilder.suggest("include:" + idStr);
                 }
             }
         }
-
-        return builder.buildFuture();
+        
+        return subBuilder.buildFuture();
     }
 
+    // Store last query for each player (UUID -> QueryContext)
     private static final Map<UUID, QueryContext> lastQueries = new java.util.HashMap<>();
-
     private static class FlatLogEntry {
+        public final BlockPos pos;
         public final Object entry;
-        public final String type;
-
-        public FlatLogEntry(Object entry, String type) {
+        public FlatLogEntry(BlockPos pos, Object entry) {
+            this.pos = pos;
             this.entry = entry;
-            this.type = type;
         }
     }
-
     private static class QueryContext {
-        public List<FlatLogEntry> results;
-        public String originalQuery;
-        public BlockPos queryPos;
-        public int entriesPerPage = 15;
-
-        public QueryContext(List<FlatLogEntry> results, String originalQuery, BlockPos queryPos) {
-            this.results = results;
-            this.originalQuery = originalQuery;
-            this.queryPos = queryPos;
+        public final List<FlatLogEntry> flatList;
+        public final int entriesPerPage;
+        public QueryContext(List<FlatLogEntry> flatList, int entriesPerPage) {
+            this.flatList = flatList;
+            this.entriesPerPage = entriesPerPage;
         }
     }
 
@@ -201,15 +200,13 @@ public class MineTracerCommand {
             source.sendError(Text.literal("You do not have permission to use this command."));
             return 0;
         }
-
         String arg = StringArgumentType.getString(ctx, "arg");
         String userFilter = null;
         String timeArg = null;
         int range = 100;
         java.util.Set<String> actionFilters = new java.util.HashSet<>();
         String includeItem = null;
-
-        // Parse filters
+        // Accept time:, range:, user:, action:, include: anywhere in the string
         for (String part : arg.split(" ")) {
             if (part.startsWith("user:")) {
                 userFilter = part.substring(5);
@@ -234,14 +231,12 @@ public class MineTracerCommand {
                 includeItem = part.substring(8);
             }
         }
-
         BlockPos playerPos = source.getPlayer().getBlockPos();
         Instant cutoff = null;
         if (timeArg != null) {
             long seconds = parseTimeArg(timeArg);
             cutoff = Instant.now().minusSeconds(seconds);
         }
-
         // Gather all logs
         List<LogStorage.BlockLogEntry> blockLogs = LogStorage.getBlockLogsInRange(playerPos, range, userFilter);
         List<LogStorage.SignLogEntry> signLogs = LogStorage.getSignLogsInRange(playerPos, range, userFilter);
@@ -249,13 +244,13 @@ public class MineTracerCommand {
         // For kill logs, filter by killer if action:kill, otherwise by victim
         boolean filterByKiller = actionFilters.contains("kill");
         List<LogStorage.KillLogEntry> killLogs = LogStorage.getKillLogsInRange(playerPos, range, userFilter, filterByKiller);
-
-        // Apply user filter to container logs (since getLogsInRange doesn't accept userFilter)
+        
+        // Apply user filter to container logs (the method doesn't accept userFilter parameter)
         if (userFilter != null) {
             final String userFilterFinal = userFilter;
             containerLogs.removeIf(entry -> !entry.playerName.equalsIgnoreCase(userFilterFinal));
         }
-
+        
         // Apply time filter
         if (cutoff != null) {
             final Instant cutoffFinal = cutoff;
@@ -264,7 +259,6 @@ public class MineTracerCommand {
             containerLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
             killLogs.removeIf(entry -> entry.timestamp.isBefore(cutoffFinal));
         }
-
         // Filter by action if specified - check if entry action matches any of the specified actions
         if (!actionFilters.isEmpty()) {
             containerLogs.removeIf(entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
@@ -272,124 +266,196 @@ public class MineTracerCommand {
             signLogs.removeIf(entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
             killLogs.removeIf(entry -> actionFilters.stream().noneMatch(filter -> entry.action.equalsIgnoreCase(filter)));
         }
-
         // Filter by include item if specified
         if (includeItem != null && !includeItem.isEmpty()) {
             final String includeItemFinal = includeItem;
             containerLogs.removeIf(entry -> !Registries.ITEM.getId(entry.stack.getItem()).toString().equals(includeItemFinal));
-            // For block logs, filter by block ID instead of item ID
-            blockLogs.removeIf(entry -> !entry.blockId.equals(includeItemFinal));
         }
-
-        // Combine and sort all logs by timestamp (most recent first)
+        // Flatten all logs into a single list with position
         List<FlatLogEntry> flatList = new ArrayList<>();
-        for (LogStorage.LogEntry entry : containerLogs) {
-            flatList.add(new FlatLogEntry(entry, "container"));
-        }
-        for (LogStorage.BlockLogEntry entry : blockLogs) {
-            flatList.add(new FlatLogEntry(entry, "block"));
-        }
-        for (LogStorage.SignLogEntry entry : signLogs) {
-            flatList.add(new FlatLogEntry(entry, "sign"));
-        }
-        for (LogStorage.KillLogEntry entry : killLogs) {
-            flatList.add(new FlatLogEntry(entry, "kill"));
-        }
-
+        for (LogStorage.BlockLogEntry entry : blockLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
+        for (LogStorage.SignLogEntry entry : signLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
+        for (LogStorage.LogEntry entry : containerLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
+        for (LogStorage.KillLogEntry entry : killLogs) flatList.add(new FlatLogEntry(entry.pos, entry));
+        // Sort by timestamp descending
         flatList.sort((a, b) -> {
-            Instant aTime = a.entry instanceof LogStorage.LogEntry ? ((LogStorage.LogEntry)a.entry).timestamp :
-                           a.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)a.entry).timestamp :
-                           a.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)a.entry).timestamp :
-                           a.entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)a.entry).timestamp :
-                           Instant.EPOCH;
-            Instant bTime = b.entry instanceof LogStorage.LogEntry ? ((LogStorage.LogEntry)b.entry).timestamp :
-                           b.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)b.entry).timestamp :
-                           b.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)b.entry).timestamp :
-                           b.entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)b.entry).timestamp :
-                           Instant.EPOCH;
-            return bTime.compareTo(aTime);
+            Instant ta =
+                a.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)a.entry).timestamp :
+                a.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)a.entry).timestamp :
+                a.entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)a.entry).timestamp :
+                ((LogStorage.LogEntry)a.entry).timestamp;
+            Instant tb =
+                b.entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)b.entry).timestamp :
+                b.entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)b.entry).timestamp :
+                b.entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)b.entry).timestamp :
+                ((LogStorage.LogEntry)b.entry).timestamp;
+            return tb.compareTo(ta);
         });
+        int entriesPerPage = 5; // Reduced from 10 to 5 for less logs per page
+        lastQueries.put(source.getPlayer().getUuid(), new QueryContext(flatList, entriesPerPage));
+        // Show first page
+        return showLookupPage(source, flatList, 1, entriesPerPage);
+    }
 
-        // Store query context for pagination
-        QueryContext queryContext = new QueryContext(flatList, arg, playerPos);
-        lastQueries.put(source.getPlayer().getUuid(), queryContext);
+    public static int lookupPage(CommandContext<ServerCommandSource> ctx) {
+        int page = ctx.getArgument("page", Integer.class);
+        ServerCommandSource source = ctx.getSource();
+        QueryContext context = lastQueries.get(source.getPlayer().getUuid());
+        if (context == null) {
+            source.sendFeedback(() -> Text.literal("No previous lookup found. Use /flowframe minetracer lookup [filters] first.").formatted(Formatting.RED), false);
+            return Command.SINGLE_SUCCESS;
+        }
+        return showLookupPage(source, context.flatList, page, context.entriesPerPage);
+    }
 
-        // Display first page
-        displayPage(source, flatList, 1, queryContext.entriesPerPage);
-
+    private static int showLookupPage(ServerCommandSource source, List<FlatLogEntry> flatList, int page, int entriesPerPage) {
+        int totalPages = (int)Math.ceil((double)flatList.size() / entriesPerPage);
+        if (page < 1) page = 1;
+        if (page > totalPages) page = totalPages;
+        int start = (page - 1) * entriesPerPage;
+        int end = Math.min(start + entriesPerPage, flatList.size());
+        if (flatList.isEmpty()) {
+            source.sendFeedback(() -> Text.literal("No logs found.").formatted(Formatting.GRAY), false);
+            return Command.SINGLE_SUCCESS;
+        }
+        source.sendFeedback(() -> Text.literal("----- MineTracer Lookup Results -----").formatted(Formatting.AQUA), false);
+        for (int i = start; i < end; i++) {
+            FlatLogEntry fle = flatList.get(i);
+            BlockPos pos = fle.pos;
+            Object entry = fle.entry;
+            String header = "(x" + pos.getX() + "/y" + pos.getY() + "/z" + pos.getZ() + ")";
+            source.sendFeedback(() -> Text.literal(header).formatted(Formatting.DARK_AQUA), false);
+            Text msg = formatLogEntryForChat(entry);
+            source.sendFeedback(() -> msg, false);
+        }
+        String pageMsg = "Page " + page + "/" + totalPages + ". View older data by typing \"/flowframe minetracer page <page>\".";
+        source.sendFeedback(() -> Text.literal(pageMsg).formatted(Formatting.GRAY), false);
         return Command.SINGLE_SUCCESS;
     }
 
-    private static void displayPage(ServerCommandSource source, List<FlatLogEntry> logs, int page, int entriesPerPage) {
-        int totalEntries = logs.size();
-        int totalPages = (totalEntries + entriesPerPage - 1) / entriesPerPage;
-        int start = (page - 1) * entriesPerPage;
-        int end = Math.min(start + entriesPerPage, totalEntries);
-
-        if (start >= totalEntries || page < 1) {
-            source.sendError(Text.literal("Invalid page number."));
-            return;
-        }
-
-        source.sendFeedback(() -> Text.literal("----- MineTracer Lookup Results -----").formatted(Formatting.AQUA), false);
-        for (int i = start; i < end; i++) {
-            FlatLogEntry fle = logs.get(i);
-            source.sendFeedback(() -> formatLogEntryForChat(fle.entry), false);
-        }
-
-        source.sendFeedback(() -> Text.literal("Page " + page + "/" + totalPages + " (" + totalEntries + " entries) - Use /flowframe minetracer page <number> for other pages").formatted(Formatting.GRAY), false);
-    }
-
-    public static Text formatLogEntryForChat(Object entry) {
-        if (entry instanceof LogStorage.LogEntry) {
-            LogStorage.LogEntry ce = (LogStorage.LogEntry) entry;
-            BlockPos pos = ce.pos;
-            String playerName = ce.playerName;
-            String containerName = "container"; // Generic container name since containerType field doesn't exist
-            String itemStr = ce.stack.getCount() + "x " + Registries.ITEM.getId(ce.stack.getItem()).toString();
-            String timeAgo = getTimeAgo(Duration.between(ce.timestamp, Instant.now()).getSeconds());
-
-            String desc = "";
-            if ("withdrew".equals(ce.action)) {
-                desc = "withdrew " + itemStr + " from " + containerName;
-            } else if ("deposited".equals(ce.action)) {
-                desc = "deposited " + itemStr + " into " + containerName;
-            } else {
-                desc = ce.action + " " + itemStr + " " + containerName;
-            }
-
-            Formatting color = "withdrew".equals(ce.action) ? Formatting.RED : "deposited".equals(ce.action) ? Formatting.GREEN : Formatting.GRAY;
-
-            return Text.literal(
-                playerName + " " + desc + " at " + pos.getX() + "," + pos.getY() + "," + pos.getZ() + " (" + timeAgo + " ago)"
-            ).formatted(color);
-        } else if (entry instanceof LogStorage.BlockLogEntry) {
+    // Format a single log entry for chat (used by lookup and inspector)
+    public static net.minecraft.text.Text formatLogEntryForChat(Object entry) {
+        String timeAgo = getTimeAgo(
+            entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)entry).timestamp :
+            entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)entry).timestamp :
+            entry instanceof LogStorage.KillLogEntry ? ((LogStorage.KillLogEntry)entry).timestamp :
+            ((LogStorage.LogEntry)entry).timestamp
+        );
+        if (entry instanceof LogStorage.BlockLogEntry) {
             LogStorage.BlockLogEntry be = (LogStorage.BlockLogEntry) entry;
-            String timeAgo = getTimeAgo(Duration.between(be.timestamp, Instant.now()).getSeconds());
-            String desc = be.action + " " + be.blockId;
-
-            return Text.literal(
-                be.playerName + " " + desc + " at " + be.pos.getX() + "," + be.pos.getY() + "," + be.pos.getZ() + " (" + timeAgo + " ago)"
-            ).formatted(Formatting.GRAY);
+            String actionStr = be.action;
+            Formatting color;
+            if ("broke".equals(actionStr)) {
+                actionStr = "broke block";
+                color = Formatting.RED;
+            } else if ("placed".equals(actionStr)) {
+                actionStr = "placed block";
+                color = Formatting.GREEN;
+            } else {
+                color = Formatting.GRAY;
+            }
+            return Text.literal(timeAgo + " ago - ")
+                .append(Text.literal(be.playerName).formatted(Formatting.AQUA))
+                .append(Text.literal(" " + actionStr + " ").formatted(color))
+                .append(Text.literal("#" + be.blockId).formatted(Formatting.YELLOW))
+                .append(Text.literal(" (" + getBlockName(be.blockId) + ").").formatted(Formatting.GRAY));
         } else if (entry instanceof LogStorage.SignLogEntry) {
             LogStorage.SignLogEntry se = (LogStorage.SignLogEntry) entry;
-            String timeAgo = getTimeAgo(Duration.between(se.timestamp, Instant.now()).getSeconds());
-            String desc = "edited sign";
-
-            return Text.literal(
-                se.playerName + " " + desc + " at " + se.pos.getX() + "," + se.pos.getY() + "," + se.pos.getZ() + " (" + timeAgo + " ago)"
-            ).formatted(Formatting.YELLOW);
+            // Parse before/after from nbt JSON robustly
+            String prevMsg = null;
+            String newMsg = null;
+            if (se.nbt != null && se.nbt.contains("before") && se.nbt.contains("after")) {
+                try {
+                    JsonObject nbtObj = JsonParser.parseString(se.nbt).getAsJsonObject();
+                    if (nbtObj.has("before")) {
+                        if (nbtObj.get("before").isJsonArray()) {
+                            StringBuilder sb = new StringBuilder();
+                            for (JsonElement el : nbtObj.getAsJsonArray("before")) {
+                                if (sb.length() > 0) sb.append("\n");
+                                sb.append(el.getAsString());
+                            }
+                            prevMsg = sb.toString();
+                        } else {
+                            prevMsg = nbtObj.get("before").getAsString();
+                        }
+                    }
+                    if (nbtObj.has("after")) {
+                        if (nbtObj.get("after").isJsonArray()) {
+                            StringBuilder sb = new StringBuilder();
+                            for (JsonElement el : nbtObj.getAsJsonArray("after")) {
+                                if (sb.length() > 0) sb.append("\n");
+                                sb.append(el.getAsString());
+                            }
+                            newMsg = sb.toString();
+                        } else {
+                            newMsg = nbtObj.get("after").getAsString();
+                        }
+                    }
+                } catch (Exception e) {
+                    // ignore
+                }
+            }
+            if (prevMsg == null) prevMsg = "(unknown)";
+            if (newMsg == null) newMsg = "(unknown)";
+            // Group all changed lines under a single [before] and [after] block
+            String[] beforeLines = prevMsg.split("\n", -1);
+            String[] afterLines = newMsg.split("\n", -1);
+            java.util.List<String> changedBefore = new java.util.ArrayList<>();
+            java.util.List<String> changedAfter = new java.util.ArrayList<>();
+            for (int j = 0; j < Math.max(beforeLines.length, afterLines.length); j++) {
+                String beforeLine = j < beforeLines.length ? beforeLines[j] : "";
+                String afterLine = j < afterLines.length ? afterLines[j] : "";
+                if (!beforeLine.equals(afterLine)) {
+                    changedBefore.add(beforeLine);
+                    changedAfter.add(afterLine);
+                } else if (j >= afterLines.length && j < beforeLines.length) {
+                    // Line was removed, show it in before, blank in after
+                    changedBefore.add(beforeLine);
+                    changedAfter.add("");
+                }
+            }
+            StringBuilder diffBuilder = new StringBuilder();
+            if (!changedBefore.isEmpty()) {
+                diffBuilder.append("§4[before]\n"); // yellow
+                for (String line : changedBefore) diffBuilder.append(line.isEmpty() ? "\n" : line + "\n");
+                diffBuilder.append("§a[after]\n"); // green
+                for (String line : changedAfter) diffBuilder.append(line.isEmpty() ? "\n" : line + "\n");
+            } else {
+                diffBuilder.append("(no visible change)");
+            }
+            String diffMsg = diffBuilder.toString().trim();
+            return Text.literal(timeAgo + " ago - ")
+                .append(Text.literal(se.playerName).formatted(Formatting.AQUA))
+                .append(Text.literal(" edited sign:").formatted(Formatting.YELLOW))
+                .append(Text.literal("\n" + diffMsg));
+        } else if (entry instanceof LogStorage.LogEntry) {
+            LogStorage.LogEntry ce = (LogStorage.LogEntry) entry;
+            String desc;
+            String containerName = "container";
+            String itemStr = (ce.stack.getCount() > 1 ? "#" + ce.stack.getCount() + " " : "") + ce.stack.getName().getString();
+            if ("deposited".equals(ce.action)) {
+                desc = "deposited " + itemStr + " into " + containerName;
+            } else if ("withdrew".equals(ce.action)) {
+                desc = "withdrew " + itemStr + " from " + containerName;
+            } else {
+                desc = ce.action;
+            }
+            Formatting color = "withdrew".equals(ce.action) ? Formatting.RED : "deposited".equals(ce.action) ? Formatting.GREEN : Formatting.GRAY;
+            return Text.literal(timeAgo + " ago - ")
+                .append(Text.literal(ce.playerName).formatted(Formatting.AQUA))
+                .append(Text.literal(" " + desc).formatted(color))
+                .append(Text.literal(".").formatted(Formatting.GRAY));
         } else if (entry instanceof LogStorage.KillLogEntry) {
             LogStorage.KillLogEntry ke = (LogStorage.KillLogEntry) entry;
-            String timeAgo = getTimeAgo(Duration.between(ke.timestamp, Instant.now()).getSeconds());
-            String desc = "killed " + ke.victimName; // Removed victimType since it doesn't exist
-
-            return Text.literal(
-                ke.killerName + " " + desc + " at " + ke.pos.getX() + "," + ke.pos.getY() + "," + ke.pos.getZ() + " (" + timeAgo + " ago)"
-            ).formatted(Formatting.DARK_RED);
+            Formatting color = ke.victimName.startsWith("Player") ? Formatting.RED : Formatting.YELLOW;
+            return Text.literal(timeAgo + " ago - ")
+                .append(Text.literal(ke.killerName).formatted(Formatting.AQUA))
+                .append(Text.literal(" killed ").formatted(Formatting.RED))
+                .append(Text.literal(ke.victimName).formatted(color))
+                .append(Text.literal(" in world " + ke.world).formatted(Formatting.GRAY));
+        } else {
+            return Text.literal("[?] Unknown log entry");
         }
-
-        return Text.literal("Unknown log entry").formatted(Formatting.GRAY);
     }
 
     public static int rollback(CommandContext<ServerCommandSource> ctx) {
@@ -480,8 +546,6 @@ public class MineTracerCommand {
         if (includeItem != null && !includeItem.isEmpty()) {
             final String includeItemFinal = includeItem;
             containerLogs.removeIf(entry -> !Registries.ITEM.getId(entry.stack.getItem()).toString().equals(includeItemFinal));
-            // For block logs, filter by block ID instead of item ID
-            blockLogs.removeIf(entry -> !entry.blockId.equals(includeItemFinal));
         }
 
         // ACTUAL ROLLBACK IMPLEMENTATION
@@ -578,56 +642,6 @@ public class MineTracerCommand {
         }
     }
 
-    private static boolean performDepositRollback(ServerWorld world, LogStorage.LogEntry entry) {
-        try {
-            BlockPos pos = entry.pos;
-            ItemStack stackToRemove = entry.stack.copy();
-
-            // Check if there's a container at this position
-            net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
-            if (blockEntity instanceof Inventory) {
-                Inventory inventory = (Inventory) blockEntity;
-                // Try to remove the item from the container
-                ItemStack remaining = removeItemFromInventory(inventory, stackToRemove);
-                
-                // Mark the inventory as changed so the game updates it
-                inventory.markDirty();
-                
-                // Return true if we successfully removed at least some of the stack
-                return remaining.getCount() < stackToRemove.getCount();
-            }
-            return false;
-        } catch (RuntimeException e) {
-            System.err.println("[MineTracer] Error during deposit rollback: " + e.getMessage());
-            return false;
-        }
-    }
-
-    private static ItemStack removeItemFromInventory(Inventory inventory, ItemStack stackToRemove) {
-        ItemStack remaining = stackToRemove.copy();
-        
-        // Go through the inventory and remove matching items
-        for (int i = 0; i < inventory.size() && !remaining.isEmpty(); i++) {
-            ItemStack existingStack = inventory.getStack(i);
-            if (!existingStack.isEmpty() && ItemStack.canCombine(existingStack, remaining)) {
-                int canRemove = Math.min(existingStack.getCount(), remaining.getCount());
-                if (canRemove > 0) {
-                    existingStack.decrement(canRemove);
-                    remaining.decrement(canRemove);
-                    
-                    // If the stack is now empty, set it to empty
-                    if (existingStack.isEmpty()) {
-                        inventory.setStack(i, ItemStack.EMPTY);
-                    } else {
-                        inventory.setStack(i, existingStack);
-                    }
-                }
-            }
-        }
-        
-        return remaining;
-    }
-
     private static ItemStack addItemToInventory(Inventory inventory, ItemStack stack) {
         ItemStack remaining = stack.copy();
         
@@ -695,41 +709,31 @@ public class MineTracerCommand {
                             for (String key : properties.getKeys()) {
                                 String value = properties.getString(key);
                                 try {
-                                    net.minecraft.state.property.Property<?> property = null;
-                                    for (net.minecraft.state.property.Property<?> prop : blockState.getProperties()) {
-                                        if (prop.getName().equals(key)) {
-                                            property = prop;
-                                            break;
-                                        }
-                                    }
+                                    net.minecraft.state.property.Property<?> property = blockState.getBlock().getStateManager().getProperty(key);
                                     if (property != null) {
-                                        blockState = setBlockStateProperty(blockState, property, value);
+                                        blockState = parseAndApplyProperty(blockState, property, value);
                                     }
-                                } catch (Exception e) {
-                                    System.err.println("[MineTracer] Failed to apply property " + key + "=" + value + ": " + e.getMessage());
+                                } catch (Exception propError) {
+                                    // If property parsing fails, continue with other properties
                                 }
                             }
                         }
                         
-                        // Set the block state first
+                        // Place the block with restored state
                         world.setBlockState(pos, blockState);
                         
-                        // Then try to restore block entity data if present
-                        if (nbtCompound.contains("BlockEntityTag")) {
-                            net.minecraft.nbt.NbtCompound blockEntityData = nbtCompound.getCompound("BlockEntityTag");
-                            net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
-                            if (blockEntity != null) {
-                                blockEntity.readNbt(blockEntityData);
-                                blockEntity.markDirty();
-                            }
+                        // If it's a block entity, restore its NBT data
+                        net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
+                        if (blockEntity != null && nbtCompound.contains("BlockEntityTag")) {
+                            net.minecraft.nbt.NbtCompound blockEntityNbt = nbtCompound.getCompound("BlockEntityTag");
+                            blockEntity.readNbt(blockEntityNbt);
+                            blockEntity.markDirty();
                         }
-                    } catch (Exception e) {
-                        System.err.println("[MineTracer] Failed to parse NBT for block restoration: " + e.getMessage());
-                        // Fall back to placing the block without NBT data
+                    } catch (Exception nbtError) {
+                        // If NBT parsing fails, just place the block with default state
                         world.setBlockState(pos, blockState);
                     }
                 } else {
-                    // No NBT data, just place the block
                     world.setBlockState(pos, blockState);
                 }
                 return true;
@@ -740,106 +744,143 @@ public class MineTracerCommand {
             return false;
         }
     }
-
+    
     @SuppressWarnings("unchecked")
-    private static <T extends Comparable<T>> net.minecraft.block.BlockState setBlockStateProperty(net.minecraft.block.BlockState state, net.minecraft.state.property.Property<T> property, String value) {
-        java.util.Optional<T> parsedValue = property.parse(value);
-        if (parsedValue.isPresent()) {
-            return state.with(property, parsedValue.get());
+    private static <T extends Comparable<T>> net.minecraft.block.BlockState parseAndApplyProperty(
+            net.minecraft.block.BlockState state, 
+            net.minecraft.state.property.Property<T> property, 
+            String value) {
+        try {
+            java.util.Optional<T> parsedValue = property.parse(value);
+            if (parsedValue.isPresent()) {
+                return state.with(property, parsedValue.get());
+            }
+        } catch (Exception e) {
+            // Property parsing failed, return original state
         }
         return state;
     }
 
-    public static int lookupPage(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource source = ctx.getSource();
-        if (!Permissions.check(source, "flowframe.command.minetracer.page", 2)) {
-            source.sendError(Text.literal("You do not have permission to use this command."));
-            return 0;
-        }
-
-        UUID playerId = source.getPlayer().getUuid();
-        QueryContext queryContext = lastQueries.get(playerId);
-        if (queryContext == null) {
-            source.sendError(Text.literal("No previous lookup found. Please run a lookup command first."));
-            return 0;
-        }
-
-        int page = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "page");
-        displayPage(source, queryContext.results, page, queryContext.entriesPerPage);
-
-        return Command.SINGLE_SUCCESS;
-    }
-
     public static int rollbackPage(CommandContext<ServerCommandSource> ctx) {
+        int page = ctx.getArgument("page", Integer.class);
         ServerCommandSource source = ctx.getSource();
-        if (!Permissions.check(source, "flowframe.command.minetracer.rollback", 2)) {
-            source.sendError(Text.literal("You do not have permission to use this command."));
-            return 0;
+        QueryContext context = lastQueries.get(source.getPlayer().getUuid());
+        if (context == null) {
+            source.sendFeedback(() -> Text.literal("No previous rollback found. Use /flowframe minetracer rollback [filters] first.").formatted(Formatting.RED), false);
+            return Command.SINGLE_SUCCESS;
         }
+        return showRollbackPage(source, context.flatList, page, context.entriesPerPage);
+    }
 
-        UUID playerId = source.getPlayer().getUuid();
-        QueryContext queryContext = lastQueries.get(playerId);
-        if (queryContext == null) {
-            source.sendError(Text.literal("No previous lookup found. Please run a lookup command first."));
-            return 0;
+    private static int showRollbackPage(ServerCommandSource source, List<FlatLogEntry> flatList, int page, int entriesPerPage) {
+        int totalPages = (int)Math.ceil((double)flatList.size() / entriesPerPage);
+        if (page < 1) page = 1;
+        if (page > totalPages) page = totalPages;
+        int start = (page - 1) * entriesPerPage;
+        int end = Math.min(start + entriesPerPage, flatList.size());
+        if (flatList.isEmpty()) {
+            source.sendFeedback(() -> Text.literal("No logs found.").formatted(Formatting.GRAY), false);
+            return Command.SINGLE_SUCCESS;
         }
-
-        int page = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "page");
-        // For rollback pages, we would need to implement the rollback pagination logic
-        // This is a placeholder for now
-        source.sendFeedback(() -> Text.literal("Rollback pagination not yet implemented.").formatted(Formatting.YELLOW), false);
-
+        source.sendFeedback(() -> Text.literal("----- MineTracer Rollback Results -----").formatted(Formatting.AQUA), false);
+        for (int i = start; i < end; i++) {
+            FlatLogEntry fle = flatList.get(i);
+            BlockPos pos = fle.pos;
+            Object entry = fle.entry;
+            String header = "(x" + pos.getX() + "/y" + pos.getY() + "/z" + pos.getZ() + ")";
+            source.sendFeedback(() -> Text.literal(header).formatted(Formatting.DARK_AQUA), false);
+            Text msg = formatLogEntryForChat(entry);
+            source.sendFeedback(() -> msg, false);
+        }
+        String pageMsg = "Page " + page + "/" + totalPages + ". View newer data by typing \"/flowframe minetracer rollback page <page>\".";
+        source.sendFeedback(() -> Text.literal(pageMsg).formatted(Formatting.GRAY), false);
         return Command.SINGLE_SUCCESS;
     }
 
-    public static int toggleInspector(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource source = ctx.getSource();
-        if (!Permissions.check(source, "flowframe.command.minetracer.inspector", 2)) {
-            source.sendError(Text.literal("You do not have permission to use this command."));
-            return 0;
+    private static Instant getMostRecentTimestamp(java.util.List<Object> events) {
+        Instant mostRecent = Instant.EPOCH;
+        for (Object entry : events) {
+            Instant t = entry instanceof LogStorage.BlockLogEntry ? ((LogStorage.BlockLogEntry)entry).timestamp :
+                        entry instanceof LogStorage.SignLogEntry ? ((LogStorage.SignLogEntry)entry).timestamp :
+                        ((LogStorage.LogEntry)entry).timestamp;
+            if (t.isAfter(mostRecent)) mostRecent = t;
         }
+        return mostRecent;
+    }
 
-        ServerPlayerEntity player = source.getPlayer();
-        boolean isInspector = LogStorage.isInspectorMode(player);
-        
-        if (isInspector) {
-            LogStorage.setInspectorMode(player, false);
-            source.sendFeedback(() -> Text.literal("Inspector mode disabled.").formatted(Formatting.YELLOW), false);
-        } else {
-            LogStorage.setInspectorMode(player, true);
-            source.sendFeedback(() -> Text.literal("Inspector mode enabled. Right-click or break blocks to see their history.").formatted(Formatting.GREEN), false);
+    private static String getTimeAgo(Instant timestamp) {
+        long seconds = java.time.Duration.between(timestamp, Instant.now()).getSeconds();
+        if (seconds < 60) return String.format("%.2fs", (double)seconds);
+        long minutes = seconds / 60;
+        if (minutes < 60) return String.format("%.2fm", (double)minutes + (seconds % 60) / 60.0);
+        long hours = minutes / 60;
+        if (hours < 24) return String.format("%.2fh", (double)hours + (minutes % 60) / 60.0);
+        long days = hours / 24;
+        if (days < 30) return String.format("%.2fd", (double)days + (hours % 24) / 24.0);
+        long months = days / 30;
+        if (months < 12) return String.format("%.2fmo", (double)months + (days % 30) / 30.0);
+        long years = months / 12;
+        return String.format("%.2fy", (double)years + (months % 12) / 12.0);
+    }
+
+    private static String getBlockName(String blockId) {
+        // Try to get a readable block name from the block registry
+        try {
+            net.minecraft.block.Block block = net.minecraft.registry.Registries.BLOCK.get(new net.minecraft.util.Identifier(blockId));
+            return block.getName().getString();
+        } catch (Exception e) {
+            return blockId;
         }
-
-        return Command.SINGLE_SUCCESS;
     }
 
     private static long parseTimeArg(String timeArg) {
+        timeArg = timeArg.toLowerCase();
+        long multiplier = 1;
+        if (timeArg.endsWith("s")) { multiplier = 1; timeArg = timeArg.substring(0, timeArg.length() - 1); } // seconds
+        else if (timeArg.endsWith("m")) { multiplier = 60; timeArg = timeArg.substring(0, timeArg.length() - 1); } // minutes
+        else if (timeArg.endsWith("h")) { multiplier = 3600; timeArg = timeArg.substring(0, timeArg.length() - 1); } // hours
+        else if (timeArg.endsWith("d")) { multiplier = 86400; timeArg = timeArg.substring(0, timeArg.length() - 1); } // days
+        else if (timeArg.endsWith("w")) { multiplier = 604800; timeArg = timeArg.substring(0, timeArg.length() - 1); } // weeks
+        else if (timeArg.endsWith("mo")) { multiplier = 2419200; timeArg = timeArg.substring(0, timeArg.length() - 2); } // months
+        else if (timeArg.endsWith("y")) { multiplier = 29030400; timeArg = timeArg.substring(0, timeArg.length() - 1); } // years
         try {
-            if (timeArg.endsWith("s")) {
-                return Long.parseLong(timeArg.substring(0, timeArg.length() - 1));
-            } else if (timeArg.endsWith("m")) {
-                return Long.parseLong(timeArg.substring(0, timeArg.length() - 1)) * 60;
-            } else if (timeArg.endsWith("h")) {
-                return Long.parseLong(timeArg.substring(0, timeArg.length() - 1)) * 3600;
-            } else if (timeArg.endsWith("d")) {
-                return Long.parseLong(timeArg.substring(0, timeArg.length() - 1)) * 86400;
-            } else {
-                return Long.parseLong(timeArg);
-            }
-        } catch (NumberFormatException e) {
-            return 3600; // Default to 1 hour
+            return Long.parseLong(timeArg) * multiplier;
+        } catch (Exception e) {
+            return 0;
         }
     }
 
-    private static String getTimeAgo(long seconds) {
-        if (seconds < 60) {
-            return seconds + "s";
-        } else if (seconds < 3600) {
-            return (seconds / 60) + "m";
-        } else if (seconds < 86400) {
-            return (seconds / 3600) + "h";
-        } else {
-            return (seconds / 86400) + "d";
+    private static boolean performDepositRollback(ServerWorld world, LogStorage.LogEntry entry) {
+        try {
+            BlockPos pos = entry.pos;
+            ItemStack stackToRemove = entry.stack.copy();
+
+            // Check if there's a container at this position
+            net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(pos);
+            if (blockEntity instanceof Inventory) {
+                Inventory inventory = (Inventory) blockEntity;
+                // Try to remove the item from the container
+                ItemStack remaining = removeItemFromInventory(inventory, stackToRemove);
+                
+                // Mark the inventory as changed so the game updates it
+                inventory.markDirty();
+                
+                // Return true if we successfully removed at least some of the stack
+                return remaining.getCount() < stackToRemove.getCount();
+            }
+            return false;
+        } catch (RuntimeException e) {
+            System.err.println("[MineTracer] Error during deposit rollback: " + e.getMessage());
+            return false;
         }
     }
-}
+
+    private static ItemStack removeItemFromInventory(Inventory inventory, ItemStack stackToRemove) {
+        ItemStack remaining = stackToRemove.copy();
+        
+        // Go through the inventory and remove matching items
+        for (int i = 0; i < inventory.size() && !remaining.isEmpty(); i++) {
+            ItemStack existingStack = inventory.getStack(i);
+            if (!existingStack.isEmpty() && ItemStack.canCombine(existingStack, remaining)) {
+                int canRemove = Math.min(existingStack.getCount(), remaining.getCount());
+                if
