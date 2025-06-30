@@ -1,8 +1,5 @@
 package com.flowframe.features.minetracer;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -72,101 +69,170 @@ public class MineTracerCommand {
 
     public static CompletableFuture<Suggestions> suggestPlayers(CommandContext<ServerCommandSource> ctx, SuggestionsBuilder builder) {
         String input = builder.getInput();
-        String[] parts = input.split(" ");
-        String last = parts[parts.length - 1];
-
-        // If the last part is empty (after a space) or doesn't contain a colon, show base filter suggestions
-        if (last.isEmpty() || !last.contains(":")) {
-            // Get base suggestions for filters not already used
-            if (!input.contains("user:")) builder.suggest("user:");
-            if (!input.contains("time:")) builder.suggest("time:");
-            if (!input.contains("action:")) builder.suggest("action:");
-            if (!input.contains("range:")) builder.suggest("range:");
-            if (!input.contains("include:")) builder.suggest("include:");
+        String remaining = builder.getRemaining();
+        
+        // Since we use greedyString, we need to parse the remaining text differently
+        String[] remainingParts = remaining.split(" ");
+        String currentTyping = remainingParts[remainingParts.length - 1];
+        
+        // Check if we just added a space (meaning we want to start a new filter)
+        boolean justAddedSpace = remaining.endsWith(" ");
+        
+        // Parse what filters are already used
+        java.util.Set<String> usedFilters = new java.util.HashSet<>();
+        for (String part : remaining.split(" ")) {
+            if (part.contains(":")) {
+                String filterType = part.substring(0, part.indexOf(":") + 1);
+                usedFilters.add(filterType);
+            }
         }
-
-        // Suggest player names after user: (only if incomplete)
-        else if (last.startsWith("user:")) {
-            String afterUser = last.substring(5);
-            // Only suggest if the user part is incomplete (doesn't already contain a complete username)
-            boolean hasCompleteUser = false;
+        
+        // If we just added a space, suggest new filters by appending to the end
+        if (justAddedSpace) {
+            String baseText = remaining.trim() + " "; // Ensure there's a space after existing content
+            if (!usedFilters.contains("user:")) {
+                builder.suggest(baseText + "user:");
+            }
+            if (!usedFilters.contains("time:")) {
+                builder.suggest(baseText + "time:");
+            }
+            if (!usedFilters.contains("action:")) {
+                builder.suggest(baseText + "action:");
+            }
+            if (!usedFilters.contains("range:")) {
+                builder.suggest(baseText + "range:");
+            }
+            if (!usedFilters.contains("include:")) {
+                builder.suggest(baseText + "include:");
+            }
+        }
+        // Handle specific filter completions for the current word being typed
+        else if (currentTyping.startsWith("user:")) {
+            String userPart = currentTyping.substring(5);
+            String beforeCurrent = remaining.substring(0, remaining.lastIndexOf(currentTyping));
+            
             for (ServerPlayerEntity player : ctx.getSource().getServer().getPlayerManager().getPlayerList()) {
-                if (afterUser.equals(player.getName().getString())) {
-                    hasCompleteUser = true;
-                    break;
-                }
-            }
-            if (!hasCompleteUser) {
-                // Suggest online players
-                for (ServerPlayerEntity player : ctx.getSource().getServer().getPlayerManager().getPlayerList()) {
-                    String playerName = player.getName().getString();
-                    if (playerName.toLowerCase().startsWith(afterUser.toLowerCase())) {
-                        builder.suggest("user:" + playerName);
-                    }
+                String playerName = player.getName().getString();
+                if (playerName.toLowerCase().startsWith(userPart.toLowerCase())) {
+                    builder.suggest(beforeCurrent + "user:" + playerName);
                 }
             }
         }
-
-        // Suggest action types after action: (only if incomplete)
-        else if (last.startsWith("action:")) {
-            String afterAction = last.substring(7);
-            // Check if we're after a comma (suggesting additional actions)
-            int lastCommaIndex = afterAction.lastIndexOf(',');
-            String currentAction = lastCommaIndex >= 0 ? afterAction.substring(lastCommaIndex + 1) : afterAction;
-            
-            boolean hasCompleteAction = false;
+        else if (currentTyping.startsWith("action:")) {
+            String actionPart = currentTyping.substring(7);
             String[] actions = {"withdrew", "deposited", "broke", "placed", "sign", "kill"};
+            String beforeCurrent = remaining.substring(0, remaining.lastIndexOf(currentTyping));
             
-            // Check if current action is complete
-            if (lastCommaIndex >= 0) {
-                // We're suggesting an additional action after a comma
-                for (String action : actions) {
-                    if (currentAction.equals(action)) {
-                        hasCompleteAction = true;
-                        break;
-                    }
-                }
-            } else {
-                // We're suggesting the first/only action
-                for (String action : actions) {
-                    if (afterAction.equals(action)) {
-                        hasCompleteAction = true;
-                        break;
-                    }
-                }
-            }
+            int lastComma = actionPart.lastIndexOf(',');
+            String currentAction = lastComma >= 0 ? actionPart.substring(lastComma + 1) : actionPart;
             
-            if (!hasCompleteAction) {
-                // Suggest matching actions
-                for (String action : actions) {
-                    if (action.toLowerCase().startsWith(currentAction.toLowerCase())) {
-                        if (lastCommaIndex >= 0) {
-                            // Suggesting additional action after comma
-                            String prefix = afterAction.substring(0, lastCommaIndex + 1);
-                            builder.suggest("action:" + prefix + action);
-                        } else {
-                            // Suggesting first action
-                            builder.suggest("action:" + action);
-                        }
+            for (String action : actions) {
+                if (action.toLowerCase().startsWith(currentAction.toLowerCase())) {
+                    if (lastComma >= 0) {
+                        String prefix = actionPart.substring(0, lastComma + 1);
+                        builder.suggest(beforeCurrent + "action:" + prefix + action);
+                    } else {
+                        builder.suggest(beforeCurrent + "action:" + action);
                     }
                 }
             }
         }
-
-        // Suggest item IDs after include: (only if incomplete)
-        else if (last.startsWith("include:")) {
-            String afterInclude = last.substring(8);
-            if (!afterInclude.contains(":")) {
-                // Suggest some common item namespaces or IDs
-                for (Identifier id : Registries.ITEM.getIds()) {
-                    String idStr = id.toString();
-                    if (idStr.toLowerCase().startsWith(afterInclude.toLowerCase())) {
-                        builder.suggest("include:" + idStr);
+        else if (currentTyping.startsWith("time:")) {
+            String timePart = currentTyping.substring(5);
+            String[] timeOptions = {"1h", "30m", "2d", "1w", "12h", "3d"};
+            String beforeCurrent = remaining.substring(0, remaining.lastIndexOf(currentTyping));
+            
+            for (String time : timeOptions) {
+                if (time.startsWith(timePart)) {
+                    builder.suggest(beforeCurrent + "time:" + time);
+                }
+            }
+        }
+        else if (currentTyping.startsWith("range:")) {
+            String rangePart = currentTyping.substring(6);
+            String[] rangeOptions = {"10", "25", "50", "100", "200", "500"};
+            String beforeCurrent = remaining.substring(0, remaining.lastIndexOf(currentTyping));
+            
+            for (String range : rangeOptions) {
+                if (range.startsWith(rangePart)) {
+                    builder.suggest(beforeCurrent + "range:" + range);
+                }
+            }
+        }
+        else if (currentTyping.startsWith("include:")) {
+            String itemPart = currentTyping.substring(8);
+            String beforeCurrent = remaining.substring(0, remaining.lastIndexOf(currentTyping));
+            
+            // Limit suggestions to improve performance - suggest first 20 matches
+            int maxSuggestions = 20;
+            int count = 0;
+            
+            // Get all items from the registry
+            for (Identifier itemId : Registries.ITEM.getIds()) {
+                if (count >= maxSuggestions) break;
+                String itemName = itemId.toString();
+                if (itemName.toLowerCase().contains(itemPart.toLowerCase()) || itemPart.isEmpty()) {
+                    builder.suggest(beforeCurrent + "include:" + itemName);
+                    count++;
+                }
+            }
+            
+            // Also include blocks that aren't already items (if we haven't reached limit)
+            if (count < maxSuggestions) {
+                for (Identifier blockId : Registries.BLOCK.getIds()) {
+                    if (count >= maxSuggestions) break;
+                    String blockName = blockId.toString();
+                    if ((blockName.toLowerCase().contains(itemPart.toLowerCase()) || itemPart.isEmpty()) && 
+                        !Registries.ITEM.getIds().contains(blockId)) {
+                        builder.suggest(beforeCurrent + "include:" + blockName);
+                        count++;
                     }
                 }
             }
         }
-
+        // If we're typing the start of a filter (but not after a space)
+        else if (!currentTyping.isEmpty()) {
+            String beforeCurrent = remaining.substring(0, remaining.lastIndexOf(currentTyping));
+            
+            if (!usedFilters.contains("user:") && "user:".startsWith(currentTyping.toLowerCase())) {
+                builder.suggest(beforeCurrent + "user:");
+            }
+            if (!usedFilters.contains("time:") && "time:".startsWith(currentTyping.toLowerCase())) {
+                builder.suggest(beforeCurrent + "time:");
+            }
+            if (!usedFilters.contains("action:") && "action:".startsWith(currentTyping.toLowerCase())) {
+                builder.suggest(beforeCurrent + "action:");
+            }
+            if (!usedFilters.contains("range:") && "range:".startsWith(currentTyping.toLowerCase())) {
+                builder.suggest(beforeCurrent + "range:");
+            }
+            if (!usedFilters.contains("include:") && "include:".startsWith(currentTyping.toLowerCase())) {
+                builder.suggest(beforeCurrent + "include:");
+            }
+        }
+        // If currentTyping is empty but we haven't just added a space, suggest all filters
+        else {
+            String baseText = remaining.trim();
+            if (!baseText.isEmpty()) {
+                baseText += " ";
+            }
+            if (!usedFilters.contains("user:")) {
+                builder.suggest(baseText + "user:");
+            }
+            if (!usedFilters.contains("time:")) {
+                builder.suggest(baseText + "time:");
+            }
+            if (!usedFilters.contains("action:")) {
+                builder.suggest(baseText + "action:");
+            }
+            if (!usedFilters.contains("range:")) {
+                builder.suggest(baseText + "range:");
+            }
+            if (!usedFilters.contains("include:")) {
+                builder.suggest(baseText + "include:");
+            }
+        }
+        
         return builder.buildFuture();
     }
 
@@ -491,11 +557,7 @@ public class MineTracerCommand {
 
         int totalActions = containerLogs.size() + blockLogs.size();
         
-        // Debug output
-        source.sendFeedback(() -> Text.literal("[MineTracer Debug] Container logs: " + containerLogs.size() + ", Block logs: " + blockLogs.size()).formatted(Formatting.GRAY), false);
-        if (!actionFilters.isEmpty()) {
-            source.sendFeedback(() -> Text.literal("[MineTracer Debug] Action filters: " + String.join(", ", actionFilters)).formatted(Formatting.GRAY), false);
-        }
+
         
         if (totalActions == 0) {
             source.sendFeedback(() -> Text.literal("[MineTracer] No actions found matching the specified filters.").formatted(Formatting.YELLOW), false);
