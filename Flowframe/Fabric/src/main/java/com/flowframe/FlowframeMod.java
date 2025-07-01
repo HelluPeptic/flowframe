@@ -10,7 +10,8 @@ Flowframe Mod Features:
 - /keepinv command: toggle keep inventory per player (requires permission).
 - /orelog command: view ore mining logs (requires permission).
 - Ore announce feature: broadcasts ore discoveries to ops or players with permission.
-- All major features are permission-based, allowing server admins to grant or revoke access to /tphere, /keepinv, /orelog, and ore broadcasts individually.
+- Arms Dealers Workbench blocker: prevents players from using/breaking the workbench from Vic's Point Blank mod (requires permission).
+- All major features are permission-based, allowing server admins to grant or revoke access to /tphere, /keepinv, /orelog, ore broadcasts, and arms workbench usage individually.
 */
 
 import com.flowframe.features.chatformat.ChatFormatFeature;

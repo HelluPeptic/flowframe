@@ -23,6 +23,7 @@
     "MixinScreenHandler",
     "MixinServerPlayerInteractionManager",
     "MixinSignBlockEntity",
+    "MixinArmsWorkbenchBlocker",
     "ServerPlayerInteractionManagerAccessor"
   ],
   "injectors": {
