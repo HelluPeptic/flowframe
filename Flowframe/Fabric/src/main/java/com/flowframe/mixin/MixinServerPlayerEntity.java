@@ -51,10 +51,10 @@ public abstract class MixinServerPlayerEntity {
             skullOwner.putString("Name", player.getGameProfile().getName());
             nbt.put("SkullOwner", skullOwner);
             head.setNbt(nbt);
-            ServerWorld world = (ServerWorld) player.getWorld();
-            BlockPos pos = player.getBlockPos();
-            world.spawnEntity(new net.minecraft.entity.ItemEntity(world, pos.getX() + 0.5, pos.getY() + 0.5,
-                    pos.getZ() + 0.5, head));
+            ServerWorld worldObj = (ServerWorld) player.getWorld();
+            BlockPos posObj = player.getBlockPos();
+            worldObj.spawnEntity(new net.minecraft.entity.ItemEntity(worldObj, posObj.getX() + 0.5, posObj.getY() + 0.5,
+                    posObj.getZ() + 0.5, head));
             if (keepInv) {
                 // Save inventory and prevent normal drops
                 List<ItemStack> copy = new ArrayList<>();

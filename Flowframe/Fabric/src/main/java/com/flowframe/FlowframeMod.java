@@ -35,6 +35,9 @@ import com.flowframe.features.linked.LinkedCommandFeature;
 import com.flowframe.features.levitate.LevitateCommandFeature;
 import com.flowframe.features.inventoryrestore.InventoryRestoreFeature;
 import com.flowframe.features.countentities.CountEntitiesCommand;
+import com.flowframe.features.minetracer.MineTracerCommand;
+import com.flowframe.features.minetracer.ChestEventListener;
+import com.flowframe.features.minetracer.MineTracer;
 
 public class FlowframeMod implements ModInitializer {
     @Override
@@ -56,6 +59,11 @@ public class FlowframeMod implements ModInitializer {
         LevitateCommandFeature.register();
         InventoryRestoreFeature.register();
         CountEntitiesCommand.register();
+        MineTracerCommand.register();
+        ChestEventListener.register();
+        MineTracer.register();
+        // Register MineTracer log storage lifecycle hooks
+        com.flowframe.features.minetracer.LogStorage.registerServerLifecycle();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }

@@ -154,19 +154,29 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
 ### 22. Potion Duration Extension (Vanilla & Modded)
 
 - **Description:**
-  - Ensures all drinkable potions (vanilla and modded) last at least 2 hours (144,000 ticks) when applied, except for effects from beacons and certain excluded effects.
+  - Ensures all drinkable potions (vanilla and modded) last at least 2 hours (144,000 ticks) when applied.
   - **HerbalBrews teas** (including all effects like "feral", "balanced", "tough", "lifeleech", "fortune", "bonding", "deeprush", and regeneration from Rooibos Tea) are always extended to 2 hours, even if the mod applies them with a different method.
-  - **Regeneration** is only extended to 2 hours if it comes from a drinkable potion or a HerbalBrews tea (not from enchanted golden apples or other sources).
-  - **The following effects are NOT extended and/or are disabled:**
-    - Slowness (vanilla)
-    - Health Boost (vanilla)
-    - Mining Fatigue (vanilla, completely disabled)
-    - Poison (vanilla, completely disabled)
-    - All effects from the Simply Skills mod
-    - All effects from the Simply Swords mod
-  - **Suspicious stew logic and features have been fully removed.**
 - **Commands:** None
 - **Permissions:** None (automatic)
+
+### 23. MineTracer Block/Container/Sign/Kill Logging & Rollback
+
+- **Description:**
+  - Logs all block breaks/placements, container transactions (deposits/withdrawals), sign edits, and player/entity kills within a configurable range.
+  - Allows robust lookup, rollback, and inspector mode for all logged events, with support for filtering by user, time, action, range, and included item (with tab-completion for all item IDs, including modded items).
+  - Inspector mode: `/flowframe minetracer inspect` toggles a mode where right/left-clicking blocks, containers, or signs shows log info in chat.
+  - All commands and features are protected by LuckPerms or Fabric Permissions API permissions, with operator level 2+ always allowed.
+- **Commands:**
+  - `/flowframe minetracer lookup [filters]` – Lookup logs near you. Supports filters: `user:`, `time:`, `action:`, `range:`, `include:`
+  - `/flowframe minetracer rollback [filters]` – Rollback recent actions in the area. Same filters as lookup.
+  - `/flowframe minetracer page <page>` – View additional pages of lookup results.
+  - `/flowframe minetracer inspect` – Toggle inspector mode for interactive log viewing.
+- **Permissions:**
+  - Lookup: `flowframe.command.minetracer.lookup`
+  - Rollback: `flowframe.command.minetracer.rollback`
+  - Inspector: `flowframe.command.minetracer.inspect`
+  - Page: `flowframe.command.minetracer.page`
+  - (Operators always have access)
 
 ---
 
@@ -193,11 +203,13 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
   - `flowframe.feature.inventoryrestore.cleanup`
   - `flowframe.command.obtain`
   - `flowframe.command.countentities`
+  - `flowframe.command.minetracer.lookup`
+  - `flowframe.command.minetracer.rollback`
+  - `flowframe.command.minetracer.inspect`
+  - `flowframe.command.minetracer.page`
 
 ---
 
 ## Removing Features
 
 - Each feature is modular and can be enabled/disabled by removing its registration in `FlowframeMod.java`.
-
----
