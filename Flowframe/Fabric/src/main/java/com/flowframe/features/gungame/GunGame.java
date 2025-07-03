@@ -173,6 +173,9 @@ public class GunGame {
     private void startGracePeriod() {
         state = GunGameState.GRACE_PERIOD;
         
+        // Set up team glowing effects
+        setupTeamGlowing();
+        
         // Teleport all players to spawn point
         for (UUID playerId : playerTeams.keySet()) {
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
@@ -223,13 +226,9 @@ public class GunGame {
         UUID playerId = player.getUuid();
         if (!playerTeams.containsKey(playerId)) return;
         
-        System.out.println("[GUNGAME DEBUG] Player " + player.getName().getString() + " died");
-        
         GunGameTeam team = playerTeams.get(playerId);
         team.eliminatePlayer(playerId);
         spectators.add(playerId);
-        
-        System.out.println("[GUNGAME DEBUG] Player eliminated from team " + team.getDisplayName());
         
         // Set to spectator mode
         player.changeGameMode(GameMode.SPECTATOR);
@@ -241,7 +240,6 @@ public class GunGame {
         
         // Check if team is eliminated
         if (team.isEmpty()) {
-            System.out.println("[GUNGAME DEBUG] Team " + team.getDisplayName() + " is now eliminated!");
             broadcastToGamePlayers(Text.literal("Team ")
                 .append(Text.literal(team.getDisplayName()).formatted(team.getFormatting()))
                 .append(Text.literal(" has been eliminated!")).formatted(Formatting.RED));
@@ -252,25 +250,12 @@ public class GunGame {
     }
     
     private void checkGameEnd() {
-        // Debug: Print detailed team states
-        debugTeamStates();
-        
         List<GunGameTeam> aliveTeams = teams.values().stream()
             .filter(team -> !team.isEmpty())
             .toList();
         
-        // Debug: Log team status
-        System.out.println("[GUNGAME DEBUG] Checking game end:");
-        for (GunGameTeam team : teams.values()) {
-            System.out.println("  Team " + team.getDisplayName() + ": " + team.getPlayerCount() + " total, " + team.getAlivePlayerCount() + " alive, isEmpty: " + team.isEmpty());
-        }
-        System.out.println("  Alive teams: " + aliveTeams.size());
-        
         if (aliveTeams.size() <= 1) {
-            System.out.println("[GUNGAME DEBUG] Game ending! Winner: " + (aliveTeams.isEmpty() ? "None" : aliveTeams.get(0).getDisplayName()));
             endGame(aliveTeams.isEmpty() ? null : aliveTeams.get(0));
-        } else {
-            System.out.println("[GUNGAME DEBUG] Game continues with " + aliveTeams.size() + " teams alive");
         }
     }
     
@@ -435,20 +420,21 @@ public class GunGame {
             return false;
         }
         
-        // Check if we have enough teams with players
+        // Check if we have at least 2 teams with players
         List<GunGameTeam> availableTeams = teams.values().stream()
             .filter(team -> !team.getAlivePlayers().isEmpty())
             .toList();
         
         if (availableTeams.size() < 2) {
-            return false; // Need at least 2 teams
+            return false;
         }
         
-        // Start the next round (grace period then countdown)
-        startGracePeriod();
+        // Start the game again
+        state = GunGameState.COUNTDOWN;
+        startCountdown();
         return true;
     }
-    
+
     public boolean leaveGame(UUID playerId) {
         if (!playerTeams.containsKey(playerId)) {
             return false;
@@ -549,12 +535,11 @@ public class GunGame {
                 
                 // Clear titles
                 player.networkHandler.sendPacket(new ClearTitleS2CPacket(true));
-                
-                // Send shutdown message to player
-                player.sendMessage(Text.literal("Gun game has been shut down. You have been returned to your original position.")
-                    .formatted(Formatting.YELLOW), false);
             }
         }
+        
+        // Clear team glowing effects
+        clearTeamGlowing();
         
         // Reset game state
         state = GunGameState.INACTIVE;
@@ -573,70 +558,69 @@ public class GunGame {
             .formatted(Formatting.GREEN));
     }
 
-    public boolean isPvpEnabled() {
-        return pvpEnabled;
-    }
-    
-    public boolean isPlayerInGame(UUID playerId) {
-        return playerTeams.containsKey(playerId);
-    }
-    
-    public GunGameState getState() {
-        return state;
-    }
-    
-    public Set<String> getAvailableTeams() {
-        return teams.keySet();
-    }
-    
-    public GunGameTeam getPlayerTeam(UUID playerId) {
-        return playerTeams.get(playerId);
-    }
-    
-    private void broadcastToAll(Text message) {
-        if (server != null) {
-            server.getPlayerManager().broadcast(message, false);
-        }
-    }
-    
-    private void broadcastToGamePlayers(Text message) {
-        for (UUID playerId : playerTeams.keySet()) {
-            ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
-            if (player != null) {
-                player.sendMessage(message, false);
+    private void setupTeamGlowing() {
+        if (server == null) return;
+        
+        // Set up glowing effects for team members
+        for (GunGameTeam team : teams.values()) {
+            String teamName = "gungame_" + team.getColor();
+            
+            // Create or get scoreboard team
+            net.minecraft.scoreboard.Scoreboard scoreboard = server.getScoreboard();
+            net.minecraft.scoreboard.Team scoreboardTeam = scoreboard.getTeam(teamName);
+            
+            if (scoreboardTeam == null) {
+                scoreboardTeam = scoreboard.addTeam(teamName);
+            }
+            
+            // Configure team settings
+            scoreboardTeam.setColor(team.getFormatting());
+            scoreboardTeam.setShowFriendlyInvisibles(true);
+            
+            // Add all team members to the scoreboard team
+            for (UUID playerId : team.getAlivePlayers()) {
+                ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+                if (player != null) {
+                    scoreboard.addPlayerToTeam(player.getName().getString(), scoreboardTeam);
+                    
+                    // Apply glowing effect to teammates only
+                    for (UUID teammateId : team.getAlivePlayers()) {
+                        if (!teammateId.equals(playerId)) {
+                            ServerPlayerEntity teammate = server.getPlayerManager().getPlayer(teammateId);
+                            if (teammate != null) {
+                                // This creates a visual glowing effect visible only to teammates
+                                teammate.setGlowing(true);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
     
-    private Formatting getFormattingForColor(String color) {
-        return switch (color.toLowerCase()) {
-            case "red" -> Formatting.RED;
-            case "blue" -> Formatting.BLUE;
-            case "green" -> Formatting.GREEN;
-            case "yellow" -> Formatting.YELLOW;
-            case "orange" -> Formatting.GOLD;
-            case "pink" -> Formatting.LIGHT_PURPLE;
-            case "white" -> Formatting.WHITE;
-            case "black" -> Formatting.BLACK;
-            case "gray", "grey" -> Formatting.GRAY;
-            case "brown" -> Formatting.DARK_RED;
-            case "lime" -> Formatting.GREEN;
-            case "cyan" -> Formatting.DARK_AQUA;
-            default -> Formatting.WHITE;
-        };
+    private void clearTeamGlowing() {
+        if (server == null) return;
+        
+        net.minecraft.scoreboard.Scoreboard scoreboard = server.getScoreboard();
+        
+        // Remove all gun game teams and clear glowing effects
+        for (GunGameTeam team : teams.values()) {
+            String teamName = "gungame_" + team.getColor();
+            net.minecraft.scoreboard.Team scoreboardTeam = scoreboard.getTeam(teamName);
+            
+            if (scoreboardTeam != null) {
+                // Clear glowing effects for all players
+                for (UUID playerId : team.getAllPlayers()) {
+                    ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+                    if (player != null) {
+                        player.setGlowing(false);
+                    }
+                }
+                
+                scoreboard.removeTeam(scoreboardTeam);
+            }
+        }
     }
 
-    // Debug method to print all team states
-    public void debugTeamStates() {
-        System.out.println("[GUNGAME DEBUG] === Team States ===");
-        for (GunGameTeam team : teams.values()) {
-            System.out.println("Team " + team.getDisplayName() + ":");
-            System.out.println("  Total players: " + team.getPlayerCount());
-            System.out.println("  Alive players: " + team.getAlivePlayerCount());
-            System.out.println("  Is empty: " + team.isEmpty());
-            System.out.println("  All players: " + team.getAllPlayers());
-            System.out.println("  Alive players: " + team.getAlivePlayers());
-        }
-        System.out.println("=========================");
-    }
+    // ...existing code...
 }

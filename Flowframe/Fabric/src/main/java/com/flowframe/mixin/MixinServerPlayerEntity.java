@@ -35,17 +35,11 @@ public abstract class MixinServerPlayerEntity {
         
         // Handle Gun Game death first
         GunGame game = GunGame.getInstance();
-        System.out.println("[GUNGAME DEBUG] Player " + player.getName().getString() + " died (onDeath mixin triggered)");
-        System.out.println("[GUNGAME DEBUG] Player in game: " + game.isPlayerInGame(player.getUuid()));
-        System.out.println("[GUNGAME DEBUG] Game state: " + game.getState());
         
         // Only handle death if player is in an active gun game
         if (game.isPlayerInGame(player.getUuid()) && 
             game.getState() == GunGame.GunGameState.ACTIVE) {
-            System.out.println("[GUNGAME DEBUG] Calling handlePlayerDeath");
             game.handlePlayerDeath(player);
-        } else {
-            System.out.println("[GUNGAME DEBUG] Not handling death - conditions not met");
         }
         
         // Continue with keep inventory logic
