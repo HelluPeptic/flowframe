@@ -1,6 +1,7 @@
 package com.flowframe.features.minetracer;
 
 import com.mojang.brigadier.Command;
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
@@ -61,6 +62,37 @@ public class MineTracerCommand {
                     .then(CommandManager.literal("inspector")
                         .requires(source -> Permissions.check(source, "flowframe.command.minetracer.inspector", 2))
                         .executes(MineTracerCommand::toggleInspector)
+                    )
+                    .then(CommandManager.literal("config")
+                        .requires(source -> Permissions.check(source, "flowframe.command.minetracer.config", 2))
+                        .then(CommandManager.literal("performance")
+                            .executes(MineTracerCommand::showPerformanceConfig)
+                            .then(CommandManager.literal("enable-detailed-nbt")
+                                .then(CommandManager.argument("value", BoolArgumentType.bool())
+                                    .executes(MineTracerCommand::setDetailedNbt)
+                                )
+                            )
+                            .then(CommandManager.literal("enable-container-logging")
+                                .then(CommandManager.argument("value", BoolArgumentType.bool())
+                                    .executes(MineTracerCommand::setContainerLogging)
+                                )
+                            )
+                            .then(CommandManager.literal("enable-block-logging")
+                                .then(CommandManager.argument("value", BoolArgumentType.bool())
+                                    .executes(MineTracerCommand::setBlockLogging)
+                                )
+                            )
+                            .then(CommandManager.literal("enable-sign-logging")
+                                .then(CommandManager.argument("value", BoolArgumentType.bool())
+                                    .executes(MineTracerCommand::setSignLogging)
+                                )
+                            )
+                            .then(CommandManager.literal("enable-kill-logging")
+                                .then(CommandManager.argument("value", BoolArgumentType.bool())
+                                    .executes(MineTracerCommand::setKillLogging)
+                                )
+                            )
+                        )
                     )
                 )
             );
@@ -871,6 +903,97 @@ public class MineTracerCommand {
             LogStorage.setInspectorMode(player, true);
             source.sendFeedback(() -> Text.literal("Inspector mode enabled. Right-click or break blocks to see their history.").formatted(Formatting.GREEN), false);
         }
+
+        return Command.SINGLE_SUCCESS;
+    }
+
+    public static int showPerformanceConfig(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource source = ctx.getSource();
+        if (!Permissions.check(source, "flowframe.command.minetracer.config", 2)) {
+            source.sendError(Text.literal("You do not have permission to use this command."));
+            return 0;
+        }
+
+        source.sendFeedback(() -> Text.literal("----- MineTracer Performance Config -----").formatted(Formatting.AQUA), false);
+        source.sendFeedback(() -> Text.literal("Detailed NBT Logging: " + (LogStorage.ENABLE_DETAILED_NBT_LOGGING ? "ENABLED" : "DISABLED")).formatted(LogStorage.ENABLE_DETAILED_NBT_LOGGING ? Formatting.GREEN : Formatting.RED), false);
+        source.sendFeedback(() -> Text.literal("Container Logging: " + (LogStorage.ENABLE_CONTAINER_LOGGING ? "ENABLED" : "DISABLED")).formatted(LogStorage.ENABLE_CONTAINER_LOGGING ? Formatting.GREEN : Formatting.RED), false);
+        source.sendFeedback(() -> Text.literal("Block Logging: " + (LogStorage.ENABLE_BLOCK_LOGGING ? "ENABLED" : "DISABLED")).formatted(LogStorage.ENABLE_BLOCK_LOGGING ? Formatting.GREEN : Formatting.RED), false);
+        source.sendFeedback(() -> Text.literal("Sign Logging: " + (LogStorage.ENABLE_SIGN_LOGGING ? "ENABLED" : "DISABLED")).formatted(LogStorage.ENABLE_SIGN_LOGGING ? Formatting.GREEN : Formatting.RED), false);
+        source.sendFeedback(() -> Text.literal("Kill Logging: " + (LogStorage.ENABLE_KILL_LOGGING ? "ENABLED" : "DISABLED")).formatted(LogStorage.ENABLE_KILL_LOGGING ? Formatting.GREEN : Formatting.RED), false);
+        source.sendFeedback(() -> Text.literal("Tip: Disable detailed NBT logging for best performance.").formatted(Formatting.GRAY), false);
+
+        return Command.SINGLE_SUCCESS;
+    }
+
+    public static int setDetailedNbt(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource source = ctx.getSource();
+        if (!Permissions.check(source, "flowframe.command.minetracer.config", 2)) {
+            source.sendError(Text.literal("You do not have permission to use this command."));
+            return 0;
+        }
+
+        boolean value = BoolArgumentType.getBool(ctx, "value");
+        LogStorage.ENABLE_DETAILED_NBT_LOGGING = value;
+        source.sendFeedback(() -> Text.literal("Detailed NBT logging " + (value ? "enabled" : "disabled") + ".").formatted(value ? Formatting.GREEN : Formatting.YELLOW), false);
+        if (!value) {
+            source.sendFeedback(() -> Text.literal("Performance improved: Block entity data and properties will not be saved.").formatted(Formatting.GRAY), false);
+        }
+
+        return Command.SINGLE_SUCCESS;
+    }
+
+    public static int setContainerLogging(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource source = ctx.getSource();
+        if (!Permissions.check(source, "flowframe.command.minetracer.config", 2)) {
+            source.sendError(Text.literal("You do not have permission to use this command."));
+            return 0;
+        }
+
+        boolean value = com.mojang.brigadier.arguments.BoolArgumentType.getBool(ctx, "value");
+        LogStorage.ENABLE_CONTAINER_LOGGING = value;
+        source.sendFeedback(() -> Text.literal("Container logging " + (value ? "enabled" : "disabled") + ".").formatted(value ? Formatting.GREEN : Formatting.YELLOW), false);
+
+        return Command.SINGLE_SUCCESS;
+    }
+
+    public static int setBlockLogging(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource source = ctx.getSource();
+        if (!Permissions.check(source, "flowframe.command.minetracer.config", 2)) {
+            source.sendError(Text.literal("You do not have permission to use this command."));
+            return 0;
+        }
+
+        boolean value = com.mojang.brigadier.arguments.BoolArgumentType.getBool(ctx, "value");
+        LogStorage.ENABLE_BLOCK_LOGGING = value;
+        source.sendFeedback(() -> Text.literal("Block logging " + (value ? "enabled" : "disabled") + ".").formatted(value ? Formatting.GREEN : Formatting.YELLOW), false);
+
+        return Command.SINGLE_SUCCESS;
+    }
+
+    public static int setSignLogging(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource source = ctx.getSource();
+        if (!Permissions.check(source, "flowframe.command.minetracer.config", 2)) {
+            source.sendError(Text.literal("You do not have permission to use this command."));
+            return 0;
+        }
+
+        boolean value = com.mojang.brigadier.arguments.BoolArgumentType.getBool(ctx, "value");
+        LogStorage.ENABLE_SIGN_LOGGING = value;
+        source.sendFeedback(() -> Text.literal("Sign logging " + (value ? "enabled" : "disabled") + ".").formatted(value ? Formatting.GREEN : Formatting.YELLOW), false);
+
+        return Command.SINGLE_SUCCESS;
+    }
+
+    public static int setKillLogging(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource source = ctx.getSource();
+        if (!Permissions.check(source, "flowframe.command.minetracer.config", 2)) {
+            source.sendError(Text.literal("You do not have permission to use this command."));
+            return 0;
+        }
+
+        boolean value = com.mojang.brigadier.arguments.BoolArgumentType.getBool(ctx, "value");
+        LogStorage.ENABLE_KILL_LOGGING = value;
+        source.sendFeedback(() -> Text.literal("Kill logging " + (value ? "enabled" : "disabled") + ".").formatted(value ? Formatting.GREEN : Formatting.YELLOW), false);
 
         return Command.SINGLE_SUCCESS;
     }

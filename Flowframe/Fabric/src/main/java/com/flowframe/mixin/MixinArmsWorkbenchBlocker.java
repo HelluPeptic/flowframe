@@ -20,18 +20,13 @@ public class MixinArmsWorkbenchBlocker {
 
     @Inject(method = "place", at = @At("HEAD"), cancellable = true)
     private void preventArmsWorkbenchPlacement(ItemPlacementContext context, CallbackInfoReturnable<ActionResult> cir) {
-        // Debug logging
         ItemStack stack = context.getStack();
-        Identifier id = Registries.ITEM.getId(stack.getItem());
-        System.out.println("[FLOWFRAME] Mixin called for item: " + (id != null ? id.toString() : "null"));
         
         // Check if this is an Arms Dealers Workbench item
         if (isArmsWorkbenchItem(stack)) {
-            System.out.println("[FLOWFRAME] Found Arms Dealers Workbench item: " + id.toString());
             // Check if player has permission
             if (context.getPlayer() instanceof ServerPlayerEntity serverPlayer) {
                 if (!hasLuckPermsPermission(serverPlayer, "flowframe.feature.armsworkbench")) {
-                    System.out.println("[FLOWFRAME] Blocking placement for player: " + serverPlayer.getName().getString());
                     serverPlayer.sendMessage(Text.literal("The Arms Dealers Workbench is disabled on this server!").formatted(Formatting.RED), false);
                     cir.setReturnValue(ActionResult.FAIL);
                     return;

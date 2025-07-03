@@ -95,6 +95,32 @@ public class LogStorage {
     private static volatile boolean hasUnsavedChanges = false;
     private static volatile boolean isShuttingDown = false;
     private static java.util.concurrent.ScheduledExecutorService saveScheduler;
+    
+    // Asynchronous logging system
+    private static java.util.concurrent.ExecutorService asyncLogExecutor;
+    private static final java.util.concurrent.BlockingQueue<Runnable> logQueue = new java.util.concurrent.LinkedBlockingQueue<>();
+    
+    // Performance optimization: Batch logging to reduce overhead
+    private static final int BATCH_SIZE = 50;
+    private static final List<LogEntry> pendingLogs = new ArrayList<>();
+    private static final List<BlockLogEntry> pendingBlockLogs = new ArrayList<>();
+    private static final List<SignLogEntry> pendingSignLogs = new ArrayList<>();
+    private static final List<KillLogEntry> pendingKillLogs = new ArrayList<>();
+    
+    // Configuration options for performance tuning
+    public static boolean ENABLE_DETAILED_NBT_LOGGING = true; // Enable detailed NBT by default
+    public static boolean ENABLE_CONTAINER_LOGGING = true;
+    public static boolean ENABLE_BLOCK_LOGGING = true;
+    public static boolean ENABLE_SIGN_LOGGING = true;
+    public static boolean ENABLE_KILL_LOGGING = true;
+    
+    // Cache frequently used objects to reduce allocations
+    private static final ThreadLocal<java.time.format.DateTimeFormatter> DATE_FORMATTER = 
+        ThreadLocal.withInitial(() -> java.time.format.DateTimeFormatter.ISO_INSTANT);
+    
+    // Reusable string builders for coordinate formatting
+    private static final ThreadLocal<StringBuilder> COORD_BUILDER = 
+        ThreadLocal.withInitial(() -> new StringBuilder(32));
     private static final Gson GSON = new GsonBuilder()
         .setPrettyPrinting()
         .registerTypeAdapter(java.time.Instant.class, new TypeAdapter<java.time.Instant>() {
@@ -177,10 +203,12 @@ public class LogStorage {
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STARTING.register(server -> {
             loadAllLogs();
             startPeriodicSaving();
+            startAsyncLogging();
             com.flowframe.features.minetracer.KillLogger.register(); // Register kill logging
         });
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             isShuttingDown = true;
+            stopAsyncLogging();
             stopPeriodicSaving();
             saveAllLogsNow(); // Final save on shutdown
         });
@@ -219,34 +247,204 @@ public class LogStorage {
         }
     }
 
-    public static void logContainerAction(String action, PlayerEntity player, BlockPos pos, ItemStack stack) {
-        synchronized (saveLock) {
-            logs.add(new LogEntry(action, player.getName().getString(), pos, stack, Instant.now()));
-            hasUnsavedChanges = true;
+    // Start the asynchronous logging system
+    private static void startAsyncLogging() {
+        if (asyncLogExecutor == null || asyncLogExecutor.isShutdown()) {
+            asyncLogExecutor = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "MineTracer-AsyncLogger");
+                t.setDaemon(true); // Don't prevent JVM shutdown
+                return t;
+            });
+            
+            // Start the async log processor
+            asyncLogExecutor.submit(() -> {
+                while (!isShuttingDown && !Thread.currentThread().isInterrupted()) {
+                    try {
+                        Runnable logTask = logQueue.take(); // Blocks until available
+                        logTask.run();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    } catch (Exception e) {
+                        System.err.println("[MineTracer] Error in async logging: " + e.getMessage());
+                    }
+                }
+            });
         }
+    }
+
+    // Stop the asynchronous logging system
+    private static void stopAsyncLogging() {
+        if (asyncLogExecutor != null && !asyncLogExecutor.isShutdown()) {
+            // Process any remaining log entries
+            while (!logQueue.isEmpty()) {
+                try {
+                    Runnable logTask = logQueue.poll();
+                    if (logTask != null) {
+                        logTask.run();
+                    }
+                } catch (Exception e) {
+                    System.err.println("[MineTracer] Error processing remaining logs: " + e.getMessage());
+                }
+            }
+            
+            asyncLogExecutor.shutdown();
+            try {
+                if (!asyncLogExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                    asyncLogExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                asyncLogExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    public static void logContainerAction(String action, PlayerEntity player, BlockPos pos, ItemStack stack) {
+        if (!ENABLE_CONTAINER_LOGGING) return;
+        
+        // Early exit for empty stacks to reduce noise
+        if (stack.isEmpty()) return;
+        
+        // Create copies of data to avoid issues with async processing
+        final String finalAction = action;
+        final String finalPlayerName = player.getName().getString();
+        final BlockPos finalPos = pos;
+        final ItemStack finalStack = stack.copy();
+        final Instant finalTimestamp = Instant.now();
+        
+        // Submit to async queue for processing
+        logQueue.offer(() -> {
+            synchronized (saveLock) {
+                pendingLogs.add(new LogEntry(finalAction, finalPlayerName, finalPos, finalStack, finalTimestamp));
+                
+                // Flush batch if it's getting large
+                if (pendingLogs.size() >= BATCH_SIZE) {
+                    flushPendingLogs();
+                }
+                hasUnsavedChanges = true;
+            }
+        });
     }
 
     public static void logBlockAction(String action, PlayerEntity player, BlockPos pos, String blockId, String nbt) {
-        synchronized (saveLock) {
-            BlockLogEntry entry = new BlockLogEntry(action, player.getName().getString(), pos, blockId, nbt, Instant.now());
-            blockLogs.add(entry);
-            hasUnsavedChanges = true;
-        }
+        if (!ENABLE_BLOCK_LOGGING) return;
+        
+        // Create copies of data to avoid issues with async processing
+        final String finalAction = action;
+        final String finalPlayerName = player.getName().getString();
+        final BlockPos finalPos = pos;
+        final String finalBlockId = blockId;
+        final String finalNbt = ENABLE_DETAILED_NBT_LOGGING ? nbt : null;
+        final Instant finalTimestamp = Instant.now();
+        
+        // Submit to async queue for processing
+        logQueue.offer(() -> {
+            synchronized (saveLock) {
+                pendingBlockLogs.add(new BlockLogEntry(finalAction, finalPlayerName, finalPos, finalBlockId, finalNbt, finalTimestamp));
+                
+                // Flush batch if it's getting large
+                if (pendingBlockLogs.size() >= BATCH_SIZE) {
+                    flushPendingBlockLogs();
+                }
+                hasUnsavedChanges = true;
+            }
+        });
     }
 
     public static void logSignAction(String action, PlayerEntity player, BlockPos pos, String text, String nbt) {
-        synchronized (saveLock) {
-            String playerName = player != null ? player.getName().getString() : "unknown";
-            SignLogEntry entry = new SignLogEntry(action, playerName, pos, text, nbt, Instant.now());
-            signLogs.add(entry);
-            hasUnsavedChanges = true;
-        }
+        if (!ENABLE_SIGN_LOGGING) return;
+        
+        // Create copies of data to avoid issues with async processing
+        final String finalAction = action;
+        final String finalPlayerName = player != null ? player.getName().getString() : "unknown";
+        final BlockPos finalPos = pos;
+        final String finalText = text;
+        final String finalNbt = ENABLE_DETAILED_NBT_LOGGING ? nbt : null;
+        final Instant finalTimestamp = Instant.now();
+        
+        // Submit to async queue for processing
+        logQueue.offer(() -> {
+            synchronized (saveLock) {
+                pendingSignLogs.add(new SignLogEntry(finalAction, finalPlayerName, finalPos, finalText, finalNbt, finalTimestamp));
+                
+                // Flush batch if it's getting large
+                if (pendingSignLogs.size() >= BATCH_SIZE) {
+                    flushPendingSignLogs();
+                }
+                hasUnsavedChanges = true;
+            }
+        });
     }
 
     public static void logKillAction(String killerName, String victimName, BlockPos pos, String world) {
+        if (!ENABLE_KILL_LOGGING) return;
+        
+        // Create copies of data to avoid issues with async processing
+        final String finalKillerName = killerName;
+        final String finalVictimName = victimName;
+        final BlockPos finalPos = pos;
+        final String finalWorld = world;
+        final Instant finalTimestamp = Instant.now();
+        
+        // Submit to async queue for processing
+        logQueue.offer(() -> {
+            synchronized (saveLock) {
+                pendingKillLogs.add(new KillLogEntry(finalKillerName, finalVictimName, finalPos, finalWorld, finalTimestamp));
+                
+                // Flush batch if it's getting large
+                if (pendingKillLogs.size() >= BATCH_SIZE) {
+                    flushPendingKillLogs();
+                }
+                hasUnsavedChanges = true;
+            }
+        });
+    }
+    
+    // Flush pending logs to main storage
+    private static void flushPendingLogs() {
+        logs.addAll(pendingLogs);
+        pendingLogs.clear();
+    }
+    
+    private static void flushPendingBlockLogs() {
+        blockLogs.addAll(pendingBlockLogs);
+        pendingBlockLogs.clear();
+    }
+    
+    private static void flushPendingSignLogs() {
+        signLogs.addAll(pendingSignLogs);
+        pendingSignLogs.clear();
+    }
+    
+    private static void flushPendingKillLogs() {
+        killLogs.addAll(pendingKillLogs);
+        pendingKillLogs.clear();
+    }
+    
+    // Flush all pending logs before saving or querying
+    private static void flushAllPendingLogs() {
+        // Wait for async queue to process (with timeout)
+        waitForAsyncQueue(1000); // Wait up to 1 second
+        
         synchronized (saveLock) {
-            killLogs.add(new KillLogEntry(killerName, victimName, pos, world, Instant.now()));
-            hasUnsavedChanges = true;
+            flushPendingLogs();
+            flushPendingBlockLogs();
+            flushPendingSignLogs();
+            flushPendingKillLogs();
+        }
+    }
+    
+    // Wait for async logging queue to be empty
+    private static void waitForAsyncQueue(long timeoutMs) {
+        long startTime = System.currentTimeMillis();
+        while (!logQueue.isEmpty() && (System.currentTimeMillis() - startTime) < timeoutMs) {
+            try {
+                Thread.sleep(10); // Small delay
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
         }
     }
 
@@ -387,6 +585,9 @@ public class LogStorage {
             if (!hasUnsavedChanges && !isShuttingDown) {
                 return; // Nothing to save
             }
+            
+            // Flush any pending logs before saving
+            flushAllPendingLogs();
             
             try {
                 Files.createDirectories(LOG_FILE.getParent());

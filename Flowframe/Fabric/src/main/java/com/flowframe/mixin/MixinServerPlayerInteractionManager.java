@@ -41,26 +41,31 @@ public class MixinServerPlayerInteractionManager {
         Identifier blockId = Registries.BLOCK.getId(placedState.getBlock());
         net.minecraft.block.entity.BlockEntity blockEntity = world.getBlockEntity(placedPos);
         
-        // Create NBT compound that includes both block state properties and block entity data
-        net.minecraft.nbt.NbtCompound fullNbt = new net.minecraft.nbt.NbtCompound();
-        
-        // Store block state properties
-        if (!placedState.getProperties().isEmpty()) {
-            net.minecraft.nbt.NbtCompound propertiesNbt = new net.minecraft.nbt.NbtCompound();
-            for (net.minecraft.state.property.Property<?> property : placedState.getProperties()) {
-                String propertyName = property.getName();
-                String propertyValue = placedState.get(property).toString();
-                propertiesNbt.putString(propertyName, propertyValue);
+        // Only serialize NBT if there's actually complex data to preserve AND detailed logging is enabled
+        String nbt = null;
+        if (LogStorage.ENABLE_DETAILED_NBT_LOGGING && (blockEntity != null || !placedState.getProperties().isEmpty())) {
+            // Create NBT compound that includes both block state properties and block entity data
+            net.minecraft.nbt.NbtCompound fullNbt = new net.minecraft.nbt.NbtCompound();
+            
+            // Store block state properties only if they exist
+            if (!placedState.getProperties().isEmpty()) {
+                net.minecraft.nbt.NbtCompound propertiesNbt = new net.minecraft.nbt.NbtCompound();
+                for (net.minecraft.state.property.Property<?> property : placedState.getProperties()) {
+                    String propertyName = property.getName();
+                    String propertyValue = placedState.get(property).toString();
+                    propertiesNbt.putString(propertyName, propertyValue);
+                }
+                fullNbt.put("Properties", propertiesNbt);
             }
-            fullNbt.put("Properties", propertiesNbt);
+            
+            // Store block entity data if present
+            if (blockEntity != null) {
+                fullNbt.put("BlockEntityTag", blockEntity.createNbt());
+            }
+            
+            nbt = fullNbt.isEmpty() ? null : fullNbt.toString();
         }
         
-        // Store block entity data if present
-        if (blockEntity != null) {
-            fullNbt.put("BlockEntityTag", blockEntity.createNbt());
-        }
-        
-        String nbt = fullNbt.isEmpty() ? null : fullNbt.toString();
         LogStorage.logBlockAction("placed", player, placedPos, blockId.toString(), nbt);
         if (blockEntity instanceof net.minecraft.block.entity.SignBlockEntity) {
             net.minecraft.block.entity.SignBlockEntity sign = (net.minecraft.block.entity.SignBlockEntity) blockEntity;
@@ -89,26 +94,31 @@ public class MixinServerPlayerInteractionManager {
         Identifier blockId = Registries.BLOCK.getId(state.getBlock());
         BlockEntity blockEntity = world.getBlockEntity(pos);
         
-        // Create NBT compound that includes both block state properties and block entity data
-        net.minecraft.nbt.NbtCompound fullNbt = new net.minecraft.nbt.NbtCompound();
-        
-        // Store block state properties
-        if (!state.getProperties().isEmpty()) {
-            net.minecraft.nbt.NbtCompound propertiesNbt = new net.minecraft.nbt.NbtCompound();
-            for (net.minecraft.state.property.Property<?> property : state.getProperties()) {
-                String propertyName = property.getName();
-                String propertyValue = state.get(property).toString();
-                propertiesNbt.putString(propertyName, propertyValue);
+        // Only serialize NBT if there's actually complex data to preserve AND detailed logging is enabled
+        String nbt = null;
+        if (LogStorage.ENABLE_DETAILED_NBT_LOGGING && (blockEntity != null || !state.getProperties().isEmpty())) {
+            // Create NBT compound that includes both block state properties and block entity data
+            net.minecraft.nbt.NbtCompound fullNbt = new net.minecraft.nbt.NbtCompound();
+            
+            // Store block state properties only if they exist
+            if (!state.getProperties().isEmpty()) {
+                net.minecraft.nbt.NbtCompound propertiesNbt = new net.minecraft.nbt.NbtCompound();
+                for (net.minecraft.state.property.Property<?> property : state.getProperties()) {
+                    String propertyName = property.getName();
+                    String propertyValue = state.get(property).toString();
+                    propertiesNbt.putString(propertyName, propertyValue);
+                }
+                fullNbt.put("Properties", propertiesNbt);
             }
-            fullNbt.put("Properties", propertiesNbt);
+            
+            // Store block entity data if present
+            if (blockEntity != null) {
+                fullNbt.put("BlockEntityTag", blockEntity.createNbt());
+            }
+            
+            nbt = fullNbt.isEmpty() ? null : fullNbt.toString();
         }
         
-        // Store block entity data if present
-        if (blockEntity != null) {
-            fullNbt.put("BlockEntityTag", blockEntity.createNbt());
-        }
-        
-        String nbt = fullNbt.isEmpty() ? null : fullNbt.toString();
         LogStorage.logBlockAction("broke", player, pos, blockId.toString(), nbt);
         if (blockEntity instanceof SignBlockEntity) {
             SignBlockEntity sign = (SignBlockEntity) blockEntity;
