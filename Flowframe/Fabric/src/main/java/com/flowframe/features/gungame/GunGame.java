@@ -333,7 +333,7 @@ public class GunGame {
         Text waitingMessage = Text.literal("Round ended! Waiting for host to start the next round...")
             .formatted(Formatting.YELLOW);
         broadcastToGamePlayers(waitingMessage);
-        broadcastToGamePlayers(Text.literal("Host can use '/flowframe gungame nextround' to start the next round")
+        broadcastToGamePlayers(Text.literal("Host can use '/flowframe gungame start' to start the next round")
             .formatted(Formatting.GRAY));
         broadcastToGamePlayers(Text.literal("Players can use '/flowframe gungame leave' to leave the game")
             .formatted(Formatting.GRAY));

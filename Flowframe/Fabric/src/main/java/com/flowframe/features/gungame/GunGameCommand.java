@@ -31,9 +31,6 @@ public class GunGameCommand {
                     .then(CommandManager.literal("start")
                         .requires(source -> hasLuckPermsPermission(source, "flowframe.command.gungame.start"))
                         .executes(GunGameCommand::startGame))
-                    .then(CommandManager.literal("nextround")
-                        .requires(source -> hasLuckPermsPermission(source, "flowframe.command.gungame.start"))
-                        .executes(GunGameCommand::nextRound))
                     .then(CommandManager.literal("leave")
                         .executes(GunGameCommand::leaveGame))
                     .then(CommandManager.literal("kick")
@@ -98,22 +95,33 @@ public class GunGameCommand {
         ServerCommandSource source = context.getSource();
         
         GunGame game = GunGame.getInstance();
-        if (game.getState() != GunGame.GunGameState.WAITING) {
-            source.sendError(Text.literal("No gun game is waiting to start."));
-            return 0;
-        }
+        GunGame.GunGameState state = game.getState();
         
-        if (game.getAvailableTeams().size() < 2) {
-            source.sendError(Text.literal("At least 2 teams are required to start the game."));
-            return 0;
-        }
-        
-        if (game.startGame()) {
-            source.sendFeedback(() -> Text.literal("Gun game starting!")
-                .formatted(Formatting.GREEN), true);
-            return 1;
+        if (state == GunGame.GunGameState.WAITING) {
+            if (game.getAvailableTeams().size() < 2) {
+                source.sendError(Text.literal("At least 2 teams are required to start the game."));
+                return 0;
+            }
+            
+            if (game.startGame()) {
+                source.sendFeedback(() -> Text.literal("Gun game starting!")
+                    .formatted(Formatting.GREEN), true);
+                return 1;
+            } else {
+                source.sendError(Text.literal("Failed to start gun game."));
+                return 0;
+            }
+        } else if (state == GunGame.GunGameState.WAITING_NEXT_ROUND) {
+            if (game.nextRound()) {
+                source.sendFeedback(() -> Text.literal("Starting next round!")
+                    .formatted(Formatting.GREEN), true);
+                return 1;
+            } else {
+                source.sendError(Text.literal("Failed to start next round. Need at least 2 teams with players."));
+                return 0;
+            }
         } else {
-            source.sendError(Text.literal("Failed to start gun game."));
+            source.sendError(Text.literal("Cannot start game. Current state: " + state.name()));
             return 0;
         }
     }
@@ -207,30 +215,6 @@ public class GunGameCommand {
             return 1;
         } else {
             source.sendError(Text.literal("Failed to shutdown gun game."));
-            return 0;
-        }
-    }
-    
-    private static int nextRound(CommandContext<ServerCommandSource> context) {
-        ServerCommandSource source = context.getSource();
-        GunGame game = GunGame.getInstance();
-        
-        if (game.getState() == GunGame.GunGameState.INACTIVE) {
-            source.sendError(Text.literal("No gun game is currently running."));
-            return 0;
-        }
-        
-        if (game.getState() != GunGame.GunGameState.WAITING_NEXT_ROUND) {
-            source.sendError(Text.literal("Cannot start next round. Game is not in waiting state."));
-            return 0;
-        }
-        
-        if (game.nextRound()) {
-            source.sendFeedback(() -> Text.literal("Starting next round!")
-                .formatted(Formatting.GREEN), true);
-            return 1;
-        } else {
-            source.sendError(Text.literal("Failed to start next round. Need at least 2 teams with players."));
             return 0;
         }
     }
