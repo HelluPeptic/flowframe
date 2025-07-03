@@ -72,7 +72,7 @@ public class GunGame {
         // Broadcast game start announcement
         broadcastToAll(Text.literal("A gun game has started! Use ")
             .formatted(Formatting.YELLOW)
-            .append(Text.literal("/flowframe join team <color>")
+            .append(Text.literal("/flowframe gungame join <team>")
                 .formatted(Formatting.GREEN))
             .append(Text.literal(" to join a team!")
                 .formatted(Formatting.YELLOW)));
@@ -161,7 +161,7 @@ public class GunGame {
         for (UUID playerId : playerTeams.keySet()) {
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
             if (player != null) {
-                ServerWorld world = server.getOverworld();
+                ServerWorld world = player.getServerWorld(); // Use player's current world
                 player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
                     gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
                 
@@ -268,18 +268,26 @@ public class GunGame {
     }
     
     private void resetAllPlayers() {
-        // Teleport all players back to spawn and reset game modes
+        // Teleport all players back to their original positions and reset game modes
         for (UUID playerId : playerTeams.keySet()) {
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
             if (player != null) {
-                // Teleport to spawn
-                ServerWorld world = server.getOverworld();
-                player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
-                    gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
-                
                 // Reset game mode
                 GameMode originalMode = originalGameModes.getOrDefault(playerId, GameMode.SURVIVAL);
                 player.changeGameMode(originalMode);
+                
+                // Teleport to original position if available, otherwise to game spawn
+                BlockPos originalPos = originalPositions.get(playerId);
+                if (originalPos != null) {
+                    ServerWorld world = player.getServerWorld();
+                    player.teleport(world, originalPos.getX() + 0.5, originalPos.getY(), 
+                        originalPos.getZ() + 0.5, player.getYaw(), player.getPitch());
+                } else if (gameSpawnPoint != null) {
+                    // Fallback to game spawn
+                    ServerWorld world = player.getServerWorld();
+                    player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
+                        gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
+                }
                 
                 // Clear titles
                 player.networkHandler.sendPacket(new ClearTitleS2CPacket(true));
@@ -320,7 +328,7 @@ public class GunGame {
             
             BlockPos originalPos = originalPositions.get(playerId);
             if (originalPos != null) {
-                ServerWorld world = server.getOverworld();
+                ServerWorld world = player.getServerWorld();
                 player.teleport(world, originalPos.getX() + 0.5, originalPos.getY(), 
                     originalPos.getZ() + 0.5, player.getYaw(), player.getPitch());
             }
@@ -347,6 +355,72 @@ public class GunGame {
         return true;
     }
     
+    public boolean shutdownGame() {
+        if (state == GunGameState.INACTIVE) {
+            return false;
+        }
+        
+        // Set state to ending to prevent further game actions
+        state = GunGameState.ENDING;
+        pvpEnabled = false;
+        
+        // Broadcast shutdown message
+        broadcastToGamePlayers(Text.literal("Game has been shut down by an administrator!")
+            .formatted(Formatting.RED, Formatting.BOLD));
+        
+        // Reset all players immediately
+        resetAllPlayersToOriginalPositions();
+        
+        return true;
+    }
+    
+    private void resetAllPlayersToOriginalPositions() {
+        // Reset all players back to their original positions and game modes
+        for (UUID playerId : playerTeams.keySet()) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+            if (player != null) {
+                // Reset game mode first
+                GameMode originalMode = originalGameModes.getOrDefault(playerId, GameMode.SURVIVAL);
+                player.changeGameMode(originalMode);
+                
+                // Teleport to original position if available
+                BlockPos originalPos = originalPositions.get(playerId);
+                if (originalPos != null) {
+                    ServerWorld world = player.getServerWorld();
+                    player.teleport(world, originalPos.getX() + 0.5, originalPos.getY(), 
+                        originalPos.getZ() + 0.5, player.getYaw(), player.getPitch());
+                } else {
+                    // Fallback to game spawn if original position is not available
+                    if (gameSpawnPoint != null) {
+                        ServerWorld world = player.getServerWorld();
+                        player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
+                            gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
+                    }
+                }
+                
+                // Clear titles
+                player.networkHandler.sendPacket(new ClearTitleS2CPacket(true));
+                
+                // Send shutdown message to player
+                player.sendMessage(Text.literal("Gun game has been shut down. You have been returned to your original position.")
+                    .formatted(Formatting.YELLOW), false);
+            }
+        }
+        
+        // Reset game state
+        state = GunGameState.INACTIVE;
+        pvpEnabled = false;
+        playerTeams.clear();
+        teams.clear();
+        spectators.clear();
+        originalGameModes.clear();
+        originalPositions.clear();
+        gameSpawnPoint = null;
+        
+        broadcastToAll(Text.literal("Gun game has been shut down and all players have been reset.")
+            .formatted(Formatting.GREEN));
+    }
+
     public boolean isPvpEnabled() {
         return pvpEnabled;
     }

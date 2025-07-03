@@ -20,10 +20,14 @@ public class GunGameCommand {
                 .then(CommandManager.literal("gungame")
                     .then(CommandManager.literal("boot")
                         .requires(source -> hasLuckPermsPermission(source, "flowframe.command.gungame.boot"))
+                        .executes(GunGameCommand::bootGameHere)
                         .then(CommandManager.argument("x", IntegerArgumentType.integer())
                             .then(CommandManager.argument("y", IntegerArgumentType.integer())
                                 .then(CommandManager.argument("z", IntegerArgumentType.integer())
                                     .executes(GunGameCommand::bootGame)))))
+                    .then(CommandManager.literal("join")
+                        .then(CommandManager.argument("team", StringArgumentType.string())
+                            .executes(GunGameCommand::joinTeam)))
                     .then(CommandManager.literal("start")
                         .requires(source -> hasLuckPermsPermission(source, "flowframe.command.gungame.start"))
                         .executes(GunGameCommand::startGame))
@@ -31,14 +35,37 @@ public class GunGameCommand {
                         .requires(source -> source.hasPermissionLevel(2) || hasLuckPermsPermission(source, "flowframe.command.gungame.kick"))
                         .then(CommandManager.argument("player", StringArgumentType.string())
                             .executes(GunGameCommand::kickPlayer)))
+                    .then(CommandManager.literal("shutdown")
+                        .requires(source -> hasLuckPermsPermission(source, "flowframe.command.gungame.shutdown"))
+                        .executes(GunGameCommand::shutdownGame))
                     .then(CommandManager.literal("status")
                         .executes(GunGameCommand::getStatus)))
                 .then(CommandManager.literal("join")
-                    .then(CommandManager.literal("team")
-                        .then(CommandManager.argument("color", StringArgumentType.string())
-                            .executes(GunGameCommand::joinTeam))))
+                    .then(CommandManager.argument("team", StringArgumentType.string())
+                        .executes(GunGameCommand::joinTeam)))
             );
         });
+    }
+    
+    private static int bootGameHere(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        
+        try {
+            ServerPlayerEntity player = source.getPlayer();
+            BlockPos playerPos = player.getBlockPos();
+            
+            if (GunGame.getInstance().bootGame(playerPos)) {
+                source.sendFeedback(() -> Text.literal("Gun game booted successfully at your location: " + playerPos)
+                    .formatted(Formatting.GREEN), true);
+                return 1;
+            } else {
+                source.sendError(Text.literal("Failed to boot gun game. A game might already be running."));
+                return 0;
+            }
+        } catch (Exception e) {
+            source.sendError(Text.literal("Error booting gun game: " + e.getMessage()));
+            return 0;
+        }
     }
     
     private static int bootGame(CommandContext<ServerCommandSource> context) {
@@ -111,7 +138,7 @@ public class GunGameCommand {
     
     private static int joinTeam(CommandContext<ServerCommandSource> context) {
         ServerCommandSource source = context.getSource();
-        String teamColor = StringArgumentType.getString(context, "color").toLowerCase();
+        String teamColor = StringArgumentType.getString(context, "team").toLowerCase();
         
         ServerPlayerEntity player;
         try {
@@ -163,6 +190,25 @@ public class GunGameCommand {
         return 1;
     }
     
+    private static int shutdownGame(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        GunGame game = GunGame.getInstance();
+        
+        if (game.getState() == GunGame.GunGameState.INACTIVE) {
+            source.sendError(Text.literal("No gun game is currently running."));
+            return 0;
+        }
+        
+        if (game.shutdownGame()) {
+            source.sendFeedback(() -> Text.literal("Gun game has been shut down. All players have been reset.")
+                .formatted(Formatting.YELLOW), true);
+            return 1;
+        } else {
+            source.sendError(Text.literal("Failed to shutdown gun game."));
+            return 0;
+        }
+    }
+
     private static boolean hasLuckPermsPermission(ServerCommandSource source, String permission) {
         try {
             return Permissions.check(source, permission, 2);
