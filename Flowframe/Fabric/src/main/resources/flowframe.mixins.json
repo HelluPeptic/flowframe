@@ -24,6 +24,9 @@
     "MixinServerPlayerInteractionManager",
     "MixinSignBlockEntity",
     "MixinArmsWorkbenchBlocker",
+    "MixinServerPlayerEntity_GunGame",
+    "MixinLivingEntity_GunGamePvp",
+    "MixinPlayerManager_GunGameChat",
     "ServerPlayerInteractionManagerAccessor"
   ],
   "injectors": {

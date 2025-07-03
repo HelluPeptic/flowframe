@@ -39,6 +39,7 @@ import com.flowframe.features.countentities.CountEntitiesCommand;
 import com.flowframe.features.minetracer.MineTracerCommand;
 import com.flowframe.features.minetracer.ChestEventListener;
 import com.flowframe.features.minetracer.MineTracer;
+import com.flowframe.features.gungame.GunGameFeature;
 
 public class FlowframeMod implements ModInitializer {
     @Override
@@ -63,6 +64,7 @@ public class FlowframeMod implements ModInitializer {
         MineTracerCommand.register();
         ChestEventListener.register();
         MineTracer.register();
+        GunGameFeature.register();
         // Register MineTracer log storage lifecycle hooks
         com.flowframe.features.minetracer.LogStorage.registerServerLifecycle();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
