@@ -10,6 +10,7 @@ import net.minecraft.world.GameMode;
 import net.minecraft.network.packet.s2c.play.TitleS2CPacket;
 import net.minecraft.network.packet.s2c.play.SubtitleS2CPacket;
 import net.minecraft.network.packet.s2c.play.ClearTitleS2CPacket;
+import com.flowframe.features.chatformat.TablistUtil;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,7 +38,8 @@ public class GunGame {
         COUNTDOWN,     // Start countdown in progress
         GRACE_PERIOD,  // 1 minute grace period
         ACTIVE,        // Game is active with PvP
-        ENDING         // Game ending sequence
+        ENDING,        // Game ending sequence
+        WAITING_NEXT_ROUND  // Waiting between rounds for host to start next round
     }
     
     public static GunGame getInstance() {
@@ -81,7 +83,7 @@ public class GunGame {
     }
     
     public boolean joinTeam(ServerPlayerEntity player, String teamColor) {
-        if (state != GunGameState.WAITING) {
+        if (state != GunGameState.WAITING && state != GunGameState.WAITING_NEXT_ROUND) {
             return false;
         }
         
@@ -92,15 +94,17 @@ public class GunGame {
         
         UUID playerId = player.getUuid();
         
-        // Store original game mode and position
-        originalGameModes.put(playerId, player.interactionManager.getGameMode());
-        originalPositions.put(playerId, player.getBlockPos());
+        // Only store original game mode and position if this is the first time joining (initial waiting state)
+        if (state == GunGameState.WAITING) {
+            originalGameModes.put(playerId, player.interactionManager.getGameMode());
+            originalPositions.put(playerId, player.getBlockPos());
+        }
         
         // Remove from previous team if any
         if (playerTeams.containsKey(playerId)) {
             GunGameTeam oldTeam = playerTeams.get(playerId);
             oldTeam.removePlayer(playerId);
-            if (oldTeam.isEmpty()) {
+            if (oldTeam.getPlayerCount() == 0) {
                 teams.remove(oldTeam.getColor());
             }
         }
@@ -113,6 +117,9 @@ public class GunGame {
         team.addPlayer(playerId, player.getName().getString());
         playerTeams.put(playerId, team);
         
+        // Update tablist for all players to show team changes
+        TablistUtil.updateTablistDisplayNamesForAll(server);
+        
         // Broadcast join message
         broadcastToAll(Text.literal("[")
             .append(Text.literal(team.getDisplayName()).formatted(team.getFormatting()))
@@ -122,8 +129,17 @@ public class GunGame {
     }
     
     public boolean startGame() {
-        if (state != GunGameState.WAITING || teams.size() < 2) {
+        if ((state != GunGameState.WAITING && state != GunGameState.WAITING_NEXT_ROUND) || teams.size() < 2) {
             return false;
+        }
+        
+        // Check if we have at least 2 teams with players
+        List<GunGameTeam> availableTeams = teams.values().stream()
+            .filter(team -> !team.getAlivePlayers().isEmpty())
+            .toList();
+        
+        if (availableTeams.size() < 2) {
+            return false; // Need at least 2 teams with players
         }
         
         state = GunGameState.COUNTDOWN;
@@ -207,9 +223,13 @@ public class GunGame {
         UUID playerId = player.getUuid();
         if (!playerTeams.containsKey(playerId)) return;
         
+        System.out.println("[GUNGAME DEBUG] Player " + player.getName().getString() + " died");
+        
         GunGameTeam team = playerTeams.get(playerId);
         team.eliminatePlayer(playerId);
         spectators.add(playerId);
+        
+        System.out.println("[GUNGAME DEBUG] Player eliminated from team " + team.getDisplayName());
         
         // Set to spectator mode
         player.changeGameMode(GameMode.SPECTATOR);
@@ -221,6 +241,7 @@ public class GunGame {
         
         // Check if team is eliminated
         if (team.isEmpty()) {
+            System.out.println("[GUNGAME DEBUG] Team " + team.getDisplayName() + " is now eliminated!");
             broadcastToGamePlayers(Text.literal("Team ")
                 .append(Text.literal(team.getDisplayName()).formatted(team.getFormatting()))
                 .append(Text.literal(" has been eliminated!")).formatted(Formatting.RED));
@@ -231,12 +252,25 @@ public class GunGame {
     }
     
     private void checkGameEnd() {
+        // Debug: Print detailed team states
+        debugTeamStates();
+        
         List<GunGameTeam> aliveTeams = teams.values().stream()
             .filter(team -> !team.isEmpty())
             .toList();
         
+        // Debug: Log team status
+        System.out.println("[GUNGAME DEBUG] Checking game end:");
+        for (GunGameTeam team : teams.values()) {
+            System.out.println("  Team " + team.getDisplayName() + ": " + team.getPlayerCount() + " total, " + team.getAlivePlayerCount() + " alive, isEmpty: " + team.isEmpty());
+        }
+        System.out.println("  Alive teams: " + aliveTeams.size());
+        
         if (aliveTeams.size() <= 1) {
+            System.out.println("[GUNGAME DEBUG] Game ending! Winner: " + (aliveTeams.isEmpty() ? "None" : aliveTeams.get(0).getDisplayName()));
             endGame(aliveTeams.isEmpty() ? null : aliveTeams.get(0));
+        } else {
+            System.out.println("[GUNGAME DEBUG] Game continues with " + aliveTeams.size() + " teams alive");
         }
     }
     
@@ -263,8 +297,46 @@ public class GunGame {
             broadcastToAll(Text.literal("Game ended in a draw!").formatted(Formatting.YELLOW));
         }
         
-        // Reset all players after 5 seconds
-        scheduler.schedule(this::resetAllPlayers, 5000L, TimeUnit.MILLISECONDS);
+        // Wait 3 seconds then go to waiting for next round
+        scheduler.schedule(this::startWaitingForNextRound, 3000L, TimeUnit.MILLISECONDS);
+    }
+    
+    private void startWaitingForNextRound() {
+        state = GunGameState.WAITING_NEXT_ROUND;
+        pvpEnabled = false;
+        
+        // Reset all players to survival mode and teleport to game spawn
+        for (UUID playerId : playerTeams.keySet()) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+            if (player != null) {
+                player.changeGameMode(GameMode.SURVIVAL);
+                
+                // Teleport to game spawn point
+                if (gameSpawnPoint != null) {
+                    ServerWorld world = player.getServerWorld();
+                    player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
+                        gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
+                }
+            }
+        }
+        
+        // Reset team alive status for next round
+        for (GunGameTeam team : teams.values()) {
+            team.resetForNextRound();
+        }
+        spectators.clear();
+        
+        // Update tablist
+        TablistUtil.updateTablistDisplayNamesForAll(server);
+        
+        // Broadcast waiting message
+        Text waitingMessage = Text.literal("Round ended! Waiting for host to start the next round...")
+            .formatted(Formatting.YELLOW);
+        broadcastToGamePlayers(waitingMessage);
+        broadcastToGamePlayers(Text.literal("Host can use '/flowframe gungame nextround' to start the next round")
+            .formatted(Formatting.GRAY));
+        broadcastToGamePlayers(Text.literal("Players can use '/flowframe gungame leave' to leave the game")
+            .formatted(Formatting.GRAY));
     }
     
     private void resetAllPlayers() {
@@ -347,10 +419,87 @@ public class GunGame {
             teams.remove(team.getColor());
         }
         
+        // Update tablist for all players
+        TablistUtil.updateTablistDisplayNamesForAll(server);
+        
         // Check if game should end
         if (state == GunGameState.ACTIVE) {
             checkGameEnd();
         }
+        
+        return true;
+    }
+    
+    public boolean nextRound() {
+        if (state != GunGameState.WAITING_NEXT_ROUND) {
+            return false;
+        }
+        
+        // Check if we have enough teams with players
+        List<GunGameTeam> availableTeams = teams.values().stream()
+            .filter(team -> !team.getAlivePlayers().isEmpty())
+            .toList();
+        
+        if (availableTeams.size() < 2) {
+            return false; // Need at least 2 teams
+        }
+        
+        // Start the next round (grace period then countdown)
+        startGracePeriod();
+        return true;
+    }
+    
+    public boolean leaveGame(UUID playerId) {
+        if (!playerTeams.containsKey(playerId)) {
+            return false;
+        }
+        
+        // Only allow leaving during waiting periods or when game is not active
+        if (state != GunGameState.WAITING && state != GunGameState.WAITING_NEXT_ROUND) {
+            return false;
+        }
+        
+        ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+        GunGameTeam team = playerTeams.get(playerId);
+        
+        // Remove from team
+        team.removePlayer(playerId);
+        playerTeams.remove(playerId);
+        spectators.remove(playerId);
+        
+        // Reset player to original state only if we're in the first waiting period or have their original position
+        if (player != null) {
+            GameMode originalMode = originalGameModes.getOrDefault(playerId, GameMode.SURVIVAL);
+            player.changeGameMode(originalMode);
+            
+            // Only teleport to original position if it exists (from first round)
+            BlockPos originalPos = originalPositions.get(playerId);
+            if (originalPos != null) {
+                ServerWorld world = player.getServerWorld();
+                player.teleport(world, originalPos.getX() + 0.5, originalPos.getY(), 
+                    originalPos.getZ() + 0.5, player.getYaw(), player.getPitch());
+            }
+            
+            player.networkHandler.sendPacket(new ClearTitleS2CPacket(true));
+            player.sendMessage(Text.literal("You have left the gun game.")
+                .formatted(Formatting.YELLOW), false);
+        }
+        
+        // Clean up data
+        originalGameModes.remove(playerId);
+        originalPositions.remove(playerId);
+        
+        // Remove empty team
+        if (team.getPlayerCount() == 0) {
+            teams.remove(team.getColor());
+        }
+        
+        // Update tablist for all players
+        TablistUtil.updateTablistDisplayNamesForAll(server);
+        
+        // Broadcast leave message
+        broadcastToGamePlayers(Text.literal(player != null ? player.getName().getString() : "Player" + " has left the game.")
+            .formatted(Formatting.GRAY));
         
         return true;
     }
@@ -417,6 +566,9 @@ public class GunGame {
         originalPositions.clear();
         gameSpawnPoint = null;
         
+        // Update tablist for all players to remove team prefixes
+        TablistUtil.updateTablistDisplayNamesForAll(server);
+        
         broadcastToAll(Text.literal("Gun game has been shut down and all players have been reset.")
             .formatted(Formatting.GREEN));
     }
@@ -472,5 +624,19 @@ public class GunGame {
             case "cyan" -> Formatting.DARK_AQUA;
             default -> Formatting.WHITE;
         };
+    }
+
+    // Debug method to print all team states
+    public void debugTeamStates() {
+        System.out.println("[GUNGAME DEBUG] === Team States ===");
+        for (GunGameTeam team : teams.values()) {
+            System.out.println("Team " + team.getDisplayName() + ":");
+            System.out.println("  Total players: " + team.getPlayerCount());
+            System.out.println("  Alive players: " + team.getAlivePlayerCount());
+            System.out.println("  Is empty: " + team.isEmpty());
+            System.out.println("  All players: " + team.getAllPlayers());
+            System.out.println("  Alive players: " + team.getAlivePlayers());
+        }
+        System.out.println("=========================");
     }
 }

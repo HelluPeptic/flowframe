@@ -178,6 +178,42 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
   - Page: `flowframe.command.minetracer.page`
   - (Operators always have access)
 
+### 24. Arms Workbench Blocker
+
+- **Description:** Prevents players from using or breaking the Arms Dealers Workbench from Vic's Point Blank mod unless they have permission. This helps server admins control access to weapon crafting.
+- **Commands:** None
+- **Permissions:** `flowframe.feature.armsworkbench` (or operator level 2+)
+
+### 25. Gun Game System
+
+- **Description:** A comprehensive team-based PvP game system designed for use with Vic's Point Blank mod. Hosts can start custom CS:GO-style matches with teams, spectators, countdown timers, grace periods, and automatic game management.
+- **Commands:**
+  - `/flowframe gungame boot` – Boot a new gun game at your current location.
+  - `/flowframe gungame boot <x> <y> <z>` – Boot a new gun game at specified coordinates.
+  - `/flowframe gungame start` – Start the countdown for a booted game.
+  - `/flowframe gungame join <team>` – Join a team (works during initial waiting and between rounds).
+  - `/flowframe gungame leave` – Leave the game (only during waiting periods).
+  - `/flowframe gungame nextround` – Start the next round after a game ends (host only).
+  - `/flowframe gungame kick <player>` – Kick a player from the current game.
+  - `/flowframe gungame shutdown` – Emergency shutdown that returns all players to original positions.
+  - `/flowframe gungame status` – View current game status and teams.
+- **Permissions:**
+  - Boot game: `flowframe.command.gungame.boot`
+  - Start game: `flowframe.command.gungame.start`
+  - Kick players: `flowframe.command.gungame.kick` (or operator level 2+)
+  - Shutdown game: `flowframe.command.gungame.shutdown`
+- **Features:**
+  - Team-based gameplay with colored chat prefixes
+  - 10-second countdown with title displays
+  - 1-minute grace period for preparation
+  - Automatic PvP control (no friendly fire, non-participants protected)
+  - Spectator mode for eliminated players
+  - Automatic game end detection and player reset
+  - Multi-round support with waiting periods between rounds
+  - Original position restoration only after final shutdown (not between rounds)
+  - Player disconnect handling
+  - Players can join/leave teams between rounds
+
 ---
 
 ## Permissions
@@ -207,6 +243,11 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
   - `flowframe.command.minetracer.rollback`
   - `flowframe.command.minetracer.inspect`
   - `flowframe.command.minetracer.page`
+  - `flowframe.feature.armsworkbench`
+  - `flowframe.command.gungame.boot`
+  - `flowframe.command.gungame.start`
+  - `flowframe.command.gungame.kick`
+  - `flowframe.command.gungame.shutdown`
 
 ---
 

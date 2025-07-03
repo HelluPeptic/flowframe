@@ -71,6 +71,11 @@ public class GunGameTeam {
         return formatting;
     }
     
+    public void resetForNextRound() {
+        // Clear eliminated players for the next round - all players become alive again
+        eliminatedPlayers.clear();
+    }
+    
     public int getPlayerCount() {
         return players.size();
     }

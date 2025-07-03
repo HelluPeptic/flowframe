@@ -10,7 +10,6 @@
     "MixinServerPlayNetworkHandler",
     "MixinPlayerManager_JoinMessage",
     "MixinServerPlayerEntity_TablistName",
-    "MixinServerWorld_NoPhantoms",
     "MixinComposterBlock",
     "MixinEndPortalBlock",
     "MixinChatFormat",
@@ -24,7 +23,6 @@
     "MixinServerPlayerInteractionManager",
     "MixinSignBlockEntity",
     "MixinArmsWorkbenchBlocker",
-    "MixinServerPlayerEntity_GunGame",
     "MixinLivingEntity_GunGamePvp",
     "MixinPlayerManager_GunGameChat",
     "ServerPlayerInteractionManagerAccessor"

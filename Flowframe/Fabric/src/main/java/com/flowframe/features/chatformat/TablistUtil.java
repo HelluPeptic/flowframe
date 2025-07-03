@@ -1,5 +1,7 @@
 package com.flowframe.features.chatformat;
 
+import com.flowframe.features.gungame.GunGame;
+import com.flowframe.features.gungame.GunGameTeam;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;
 import net.luckperms.api.model.user.User;
@@ -58,6 +60,8 @@ public class TablistUtil {
     // Returns the custom tablist name (with prefix) for a player
     public static Text getTablistName(ServerPlayerEntity player) {
         String prefix = "";
+        
+        // Get LuckPerms prefix first
         try {
             LuckPerms luckPerms = LuckPermsProvider.get();
             User user = luckPerms.getUserManager().getUser(player.getUuid());
@@ -69,8 +73,43 @@ public class TablistUtil {
                 }
             }
         } catch (Throwable ignored) {}
-        String displayName = prefix + player.getName().getString();
+        
+        // Check if player is in a gun game and add team prefix
+        GunGame game = GunGame.getInstance();
+        String teamPrefix = "";
+        if (game.isPlayerInGame(player.getUuid())) {
+            GunGameTeam team = game.getPlayerTeam(player.getUuid());
+            if (team != null) {
+                // Create team prefix with color
+                teamPrefix = "§" + getFormattingCode(team.getFormatting()) + "[" + team.getDisplayName() + "] §r";
+            }
+        }
+        
+        String displayName = teamPrefix + prefix + player.getName().getString();
         return Text.literal(displayName);
+    }
+    
+    // Helper method to convert Formatting to color code
+    private static String getFormattingCode(Formatting formatting) {
+        return switch (formatting) {
+            case BLACK -> "0";
+            case DARK_BLUE -> "1";
+            case DARK_GREEN -> "2";
+            case DARK_AQUA -> "3";
+            case DARK_RED -> "4";
+            case DARK_PURPLE -> "5";
+            case GOLD -> "6";
+            case GRAY -> "7";
+            case DARK_GRAY -> "8";
+            case BLUE -> "9";
+            case GREEN -> "a";
+            case AQUA -> "b";
+            case RED -> "c";
+            case LIGHT_PURPLE -> "d";
+            case YELLOW -> "e";
+            case WHITE -> "f";
+            default -> "f";
+        };
     }
 
     public static void updateTablistDisplayNamesForAll(MinecraftServer server) {
