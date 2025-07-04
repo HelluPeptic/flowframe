@@ -9,15 +9,18 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.text.Text;
 
 public class VersionCommand {
-        pubic static final String MOD_VERSION = "1.30.67";
+    public static final String MOD_VERSION = "1.31.1";
+    
     public static void register() {
-        CommandRegistrationCallback.EVENT.register((dis           dispatcher.register(CommandManager.literal("flowframe")
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            dispatcher.register(CommandManager.literal("flowframe")
                 .then(CommandManager.literal("version")
                     .executes(VersionCommand::sendVersion))
             );
         });
-                    ter countentities command
-                            sCommand.register();
+        // Register countentities command
+        CountEntitiesCommand.register();
+    }
 
     private static int sendVersion(CommandContext<ServerCommandSource> context) {
         context.getSource().sendFeedback(() -> Text.literal("Flowframe version: " + MOD_VERSION), false);

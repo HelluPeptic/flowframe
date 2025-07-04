@@ -191,6 +191,12 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
   - **Grace Period:** 30-second preparation time before PvP becomes active
   - **Smart Respawn:** 3-second delay after respawn before spectator teleportation to ensure proper loading
 
+### 25. Auto GameRules
+
+- **Description:** Automatically sets `doDaylightCycle` and `doWeatherCycle` to `true` when the server starts/restarts. This ensures that time progression and weather changes are always enabled after a server restart.
+- **Commands:** None
+- **Permissions:** None (automatic)
+
 ---
 
 ## Permissions
@@ -216,15 +222,12 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
   - `flowframe.feature.inventoryrestore.cleanup`
   - `flowframe.command.obtain`
   - `flowframe.command.countentities`
-    <<<<<<< HEAD
-    =======
   - `flowframe.command.minetracer.lookup`
   - `flowframe.command.minetracer.rollback`
   - `flowframe.command.minetracer.inspect`
   - `flowframe.command.minetracer.page`
   - `flowframe.feature.armsworkbench`
   - `flowframe.command.battle.boot`
-    > > > > > > > custom-gun-game
 
 ---
 
