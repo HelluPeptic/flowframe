@@ -159,60 +159,36 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
 - **Commands:** None
 - **Permissions:** None (automatic)
 
-### 23. MineTracer Block/Container/Sign/Kill Logging & Rollback
-
-- **Description:**
-  - Logs all block breaks/placements, container transactions (deposits/withdrawals), sign edits, and player/entity kills within a configurable range.
-  - Allows robust lookup, rollback, and inspector mode for all logged events, with support for filtering by user, time, action, range, and included item (with tab-completion for all item IDs, including modded items).
-  - Inspector mode: `/flowframe minetracer inspect` toggles a mode where right/left-clicking blocks, containers, or signs shows log info in chat.
-  - All commands and features are protected by LuckPerms or Fabric Permissions API permissions, with operator level 2+ always allowed.
-- **Commands:**
-  - `/flowframe minetracer lookup [filters]` – Lookup logs near you. Supports filters: `user:`, `time:`, `action:`, `range:`, `include:`
-  - `/flowframe minetracer rollback [filters]` – Rollback recent actions in the area. Same filters as lookup.
-  - `/flowframe minetracer page <page>` – View additional pages of lookup results.
-  - `/flowframe minetracer inspect` – Toggle inspector mode for interactive log viewing.
-- **Permissions:**
-  - Lookup: `flowframe.command.minetracer.lookup`
-  - Rollback: `flowframe.command.minetracer.rollback`
-  - Inspector: `flowframe.command.minetracer.inspect`
-  - Page: `flowframe.command.minetracer.page`
-  - (Operators always have access)
-
-### 24. Arms Workbench Blocker
+### 23. Arms Workbench Blocker
 
 - **Description:** Prevents players from using or breaking the Arms Dealers Workbench from Vic's Point Blank mod unless they have permission. This helps server admins control access to weapon crafting.
 - **Commands:** None
 - **Permissions:** `flowframe.feature.armsworkbench` (or operator level 2+)
 
-### 25. Gun Game System
+### 24. Battle System
 
-- **Description:** A comprehensive team-based PvP game system designed for use with Vic's Point Blank mod. Hosts can start custom CS:GO-style matches with teams, spectators, countdown timers, grace periods, and automatic game management.
+- **Description:** A comprehensive PvP battle system that allows players to create teams, participate in multi-round battles, and spectate after elimination. Features include random team color assignment, battle leader controls, notification preferences, and automatic spectator teleportation.
 - **Commands:**
-  - `/flowframe gungame boot` – Boot a new gun game at your current location.
-  - `/flowframe gungame boot <x> <y> <z>` – Boot a new gun game at specified coordinates.
-  - `/flowframe gungame start` – Start the countdown for a booted game.
-  - `/flowframe gungame join <team>` – Join a team (works during initial waiting and between rounds).
-  - `/flowframe gungame leave` – Leave the game (only during waiting periods).
-  - `/flowframe gungame nextround` – Start the next round after a game ends (host only).
-  - `/flowframe gungame kick <player>` – Kick a player from the current game.
-  - `/flowframe gungame shutdown` – Emergency shutdown that returns all players to original positions.
-  - `/flowframe gungame status` – View current game status and teams.
+  - `/flowframe battle boot [x] [y] [z]` – Boot a new battle at specified coordinates or current location.
+  - `/flowframe battle join <team>` – Join a team with any custom name (colors assigned automatically).
+  - `/flowframe battle start [rounds]` – Start the battle with optional number of rounds (default: 1).
+  - `/flowframe battle leave` – Leave the battle (only during waiting periods).
+  - `/flowframe battle kick <player>` – Kick a player from the battle (battle leader only).
+  - `/flowframe battle shutdown` – End the battle and reset all players (battle leader only).
+  - `/flowframe battle status` – View current battle status and team information.
+  - `/flowframe battle togglenotifications` – Toggle action bar notifications for battle events.
 - **Permissions:**
-  - Boot game: `flowframe.command.gungame.boot`
-  - Start game: `flowframe.command.gungame.start`
-  - Kick players: `flowframe.command.gungame.kick` (or operator level 2+)
-  - Shutdown game: `flowframe.command.gungame.shutdown`
+  - Boot battle: `flowframe.command.battle.boot` (or operator level 2+)
+  - Other commands: Available to all players
 - **Features:**
-  - Team-based gameplay with colored chat prefixes
-  - 10-second countdown with title displays
-  - 1-minute grace period for preparation
-  - Automatic PvP control (no friendly fire, non-participants protected)
-  - Spectator mode for eliminated players
-  - Automatic game end detection and player reset
-  - Multi-round support with waiting periods between rounds
-  - Original position restoration only after final shutdown (not between rounds)
-  - Player disconnect handling
-  - Players can join/leave teams between rounds
+  - **Team System:** Players can join teams with any name, random colors assigned automatically (no duplicates)
+  - **Multi-Round Support:** Play multiple rounds in sequence with automatic progression
+  - **Battle Leader System:** Only the player who boots the battle can control game state
+  - **Spectator Mode:** Eliminated players automatically become spectators and are teleported to battle location
+  - **Notification System:** Optional action bar notifications for battle events with per-player toggle
+  - **Color Management:** Ensures unique team colors, automatically freed when teams are removed
+  - **Grace Period:** 30-second preparation time before PvP becomes active
+  - **Smart Respawn:** 3-second delay after respawn before spectator teleportation to ensure proper loading
 
 ---
 
@@ -244,10 +220,7 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
   - `flowframe.command.minetracer.inspect`
   - `flowframe.command.minetracer.page`
   - `flowframe.feature.armsworkbench`
-  - `flowframe.command.gungame.boot`
-  - `flowframe.command.gungame.start`
-  - `flowframe.command.gungame.kick`
-  - `flowframe.command.gungame.shutdown`
+  - `flowframe.command.battle.boot`
 
 ---
 

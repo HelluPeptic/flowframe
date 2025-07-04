@@ -8,7 +8,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.flowframe.features.keepinventory.KeepInventoryFeature;
-import com.flowframe.features.gungame.GunGame;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -33,14 +32,8 @@ public abstract class MixinServerPlayerEntity {
     private void onDeath(DamageSource source, CallbackInfo ci) {
         ServerPlayerEntity player = (ServerPlayerEntity) (Object) this;
         
-        // Handle Gun Game death first
-        GunGame game = GunGame.getInstance();
-        
-        // Only handle death if player is in an active gun game
-        if (game.isPlayerInGame(player.getUuid()) && 
-            game.getState() == GunGame.GunGameState.ACTIVE) {
-            game.handlePlayerDeath(player);
-        }
+        // Note: Battle deaths are now handled in MixinLivingEntity_BattlePvp to prevent death screen
+        // This method only handles keep inventory and player head drops
         
         // Continue with keep inventory logic
         boolean keepInv = KeepInventoryFeature.shouldKeepInventory(player);

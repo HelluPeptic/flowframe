@@ -1,7 +1,7 @@
 package com.flowframe.features.chatformat;
 
-import com.flowframe.features.gungame.GunGame;
-import com.flowframe.features.gungame.GunGameTeam;
+import com.flowframe.features.gungame.Battle;
+import com.flowframe.features.gungame.BattleTeam;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;
 import net.luckperms.api.model.user.User;
@@ -74,11 +74,11 @@ public class TablistUtil {
             }
         } catch (Throwable ignored) {}
         
-        // Check if player is in a gun game and add team prefix
-        GunGame game = GunGame.getInstance();
+        // Check if player is in a battle and add team prefix
+        Battle game = Battle.getInstance();
         String teamPrefix = "";
         if (game.isPlayerInGame(player.getUuid())) {
-            GunGameTeam team = game.getPlayerTeam(player.getUuid());
+            BattleTeam team = game.getPlayerTeam(player.getUuid());
             if (team != null) {
                 // Create team prefix with color
                 teamPrefix = "§" + getFormattingCode(team.getFormatting()) + "[" + team.getDisplayName() + "] §r";

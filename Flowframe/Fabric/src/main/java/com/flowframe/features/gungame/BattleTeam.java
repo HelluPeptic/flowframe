@@ -5,14 +5,14 @@ import net.minecraft.util.Formatting;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class GunGameTeam {
-    private final String color;
-    private final Formatting formatting;
+public class BattleTeam {
+    private final String name;
+    private Formatting formatting;
     private final Map<UUID, String> players = new ConcurrentHashMap<>();
     private final Set<UUID> eliminatedPlayers = ConcurrentHashMap.newKeySet();
     
-    public GunGameTeam(String color, Formatting formatting) {
-        this.color = color;
+    public BattleTeam(String name, Formatting formatting) {
+        this.name = name;
         this.formatting = formatting;
     }
     
@@ -59,16 +59,24 @@ public class GunGameTeam {
         return new HashMap<>(players);
     }
     
+    public String getName() {
+        return name;
+    }
+    
     public String getColor() {
-        return color;
+        return name; // For backwards compatibility
     }
     
     public String getDisplayName() {
-        return color.substring(0, 1).toUpperCase() + color.substring(1);
+        return name.substring(0, 1).toUpperCase() + name.substring(1);
     }
     
     public Formatting getFormatting() {
         return formatting;
+    }
+    
+    public void setFormatting(Formatting formatting) {
+        this.formatting = formatting;
     }
     
     public void resetForNextRound() {
@@ -86,8 +94,8 @@ public class GunGameTeam {
     
     @Override
     public String toString() {
-        return "GunGameTeam{" +
-                "color='" + color + '\'' +
+        return "BattleTeam{" +
+                "name='" + name + '\'' +
                 ", players=" + players.size() +
                 ", alive=" + getAlivePlayerCount() +
                 '}';
@@ -97,12 +105,12 @@ public class GunGameTeam {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        GunGameTeam that = (GunGameTeam) o;
-        return Objects.equals(color, that.color);
+        BattleTeam that = (BattleTeam) o;
+        return Objects.equals(name, that.name);
     }
     
     @Override
     public int hashCode() {
-        return Objects.hash(color);
+        return Objects.hash(name);
     }
 }

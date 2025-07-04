@@ -36,10 +36,7 @@ import com.flowframe.features.linked.LinkedCommandFeature;
 import com.flowframe.features.levitate.LevitateCommandFeature;
 import com.flowframe.features.inventoryrestore.InventoryRestoreFeature;
 import com.flowframe.features.countentities.CountEntitiesCommand;
-import com.flowframe.features.minetracer.MineTracerCommand;
-import com.flowframe.features.minetracer.ChestEventListener;
-import com.flowframe.features.minetracer.MineTracer;
-import com.flowframe.features.gungame.GunGameFeature;
+import com.flowframe.features.gungame.BattleFeature;
 
 public class FlowframeMod implements ModInitializer {
     @Override
@@ -61,12 +58,7 @@ public class FlowframeMod implements ModInitializer {
         LevitateCommandFeature.register();
         InventoryRestoreFeature.register();
         CountEntitiesCommand.register();
-        MineTracerCommand.register();
-        ChestEventListener.register();
-        MineTracer.register();
-        GunGameFeature.register();
-        // Register MineTracer log storage lifecycle hooks
-        com.flowframe.features.minetracer.LogStorage.registerServerLifecycle();
+        BattleFeature.register();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }

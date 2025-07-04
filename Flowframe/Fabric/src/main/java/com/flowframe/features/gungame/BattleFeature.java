@@ -3,20 +3,21 @@ package com.flowframe.features.gungame;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 
-public class GunGameFeature {
+public class BattleFeature {
     
     public static void register() {
         // Register commands
-        GunGameCommand.register();
+        BattleCommand.register();
         
-        // Initialize gun game when server starts
+        // Initialize battle when server starts
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
-            GunGame.getInstance().initialize(server);
+            Battle.getInstance().initialize(server);
+            BattleNotificationManager.getInstance().initialize(server);
         });
         
-        // Handle player disconnections during gun game
+        // Handle player disconnections during battle
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
-            GunGame game = GunGame.getInstance();
+            Battle game = Battle.getInstance();
             if (game.isPlayerInGame(handler.getPlayer().getUuid())) {
                 game.kickPlayer(handler.getPlayer().getUuid());
             }

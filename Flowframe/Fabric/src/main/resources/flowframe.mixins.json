@@ -10,6 +10,7 @@
     "MixinServerPlayNetworkHandler",
     "MixinPlayerManager_JoinMessage",
     "MixinServerPlayerEntity_TablistName",
+    "MixinServerWorld_NoPhantoms",
     "MixinComposterBlock",
     "MixinEndPortalBlock",
     "MixinChatFormat",
@@ -19,15 +20,12 @@
     "MixinLivingEntity_PotionDuration",
     "MixinLivingEntity_TipsyDuration",
     "MixinPotionItem",
-    "MixinScreenHandler",
-    "MixinServerPlayerInteractionManager",
-    "MixinSignBlockEntity",
     "MixinArmsWorkbenchBlocker",
-    "MixinLivingEntity_GunGamePvp",
-    "MixinPlayerManager_GunGameChat",
-    "ServerPlayerInteractionManagerAccessor"
+    "MixinLivingEntity_BattlePvp",
+    "MixinPlayerManager_BattleChat"
   ],
   "injectors": {
     "defaultRequire": 1
   }
 }
+
