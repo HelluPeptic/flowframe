@@ -177,6 +177,7 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
   - `/flowframe battle shutdown` – End the battle and reset all players (battle leader only).
   - `/flowframe battle status` – View current battle status and team information.
   - `/flowframe battle togglenotifications` – Toggle action bar notifications for battle events.
+  - `/flowframe battle giveup` – Voluntarily eliminate yourself from the battle (only during active PvP).
 - **Permissions:**
   - Boot battle: `flowframe.command.battle.boot` (or operator level 2+)
   - Other commands: Available to all players
