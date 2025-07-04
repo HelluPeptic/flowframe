@@ -20,9 +20,12 @@
     "MixinLivingEntity_PotionDuration",
     "MixinLivingEntity_TipsyDuration",
     "MixinPotionItem",
-    "MixinArmsWorkbenchBlocker"
+    "MixinArmsWorkbenchBlocker",
+    "MixinLivingEntity_BattlePvp",
+    "MixinPlayerManager_BattleChat"
   ],
   "injectors": {
     "defaultRequire": 1
   }
 }
+

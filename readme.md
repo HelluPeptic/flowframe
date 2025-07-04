@@ -159,6 +159,38 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
 - **Commands:** None
 - **Permissions:** None (automatic)
 
+### 23. Arms Workbench Blocker
+
+- **Description:** Prevents players from using or breaking the Arms Dealers Workbench from Vic's Point Blank mod unless they have permission. This helps server admins control access to weapon crafting.
+- **Commands:** None
+- **Permissions:** `flowframe.feature.armsworkbench` (or operator level 2+)
+
+### 24. Battle System
+
+- **Description:** A comprehensive PvP battle system that allows players to create teams, participate in multi-round battles, and spectate after elimination. Features include random team color assignment, battle leader controls, notification preferences, and automatic spectator teleportation.
+- **Commands:**
+  - `/flowframe battle boot [x] [y] [z]` – Boot a new battle at specified coordinates or current location.
+  - `/flowframe battle join <team>` – Join a team with any custom name (colors assigned automatically).
+  - `/flowframe battle start [rounds]` – Start the battle with optional number of rounds (default: 1).
+  - `/flowframe battle leave` – Leave the battle (only during waiting periods).
+  - `/flowframe battle kick <player>` – Kick a player from the battle (battle leader only).
+  - `/flowframe battle shutdown` – End the battle and reset all players (battle leader only).
+  - `/flowframe battle status` – View current battle status and team information.
+  - `/flowframe battle togglenotifications` – Toggle action bar notifications for battle events.
+  - `/flowframe battle giveup` – Voluntarily eliminate yourself from the battle (only during active PvP).
+- **Permissions:**
+  - Boot battle: `flowframe.command.battle.boot` (or operator level 2+)
+  - Other commands: Available to all players
+- **Features:**
+  - **Team System:** Players can join teams with any name, random colors assigned automatically (no duplicates)
+  - **Multi-Round Support:** Play multiple rounds in sequence with automatic progression
+  - **Battle Leader System:** Only the player who boots the battle can control game state
+  - **Spectator Mode:** Eliminated players automatically become spectators and are teleported to battle location
+  - **Notification System:** Optional action bar notifications for battle events with per-player toggle
+  - **Color Management:** Ensures unique team colors, automatically freed when teams are removed
+  - **Grace Period:** 30-second preparation time before PvP becomes active
+  - **Smart Respawn:** 3-second delay after respawn before spectator teleportation to ensure proper loading
+
 ---
 
 ## Permissions
@@ -184,6 +216,15 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
   - `flowframe.feature.inventoryrestore.cleanup`
   - `flowframe.command.obtain`
   - `flowframe.command.countentities`
+    <<<<<<< HEAD
+    =======
+  - `flowframe.command.minetracer.lookup`
+  - `flowframe.command.minetracer.rollback`
+  - `flowframe.command.minetracer.inspect`
+  - `flowframe.command.minetracer.page`
+  - `flowframe.feature.armsworkbench`
+  - `flowframe.command.battle.boot`
+    > > > > > > > custom-gun-game
 
 ---
 

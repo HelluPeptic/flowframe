@@ -31,6 +31,11 @@ public abstract class MixinServerPlayerEntity {
     @Inject(method = "onDeath", at = @At("HEAD"), cancellable = true)
     private void onDeath(DamageSource source, CallbackInfo ci) {
         ServerPlayerEntity player = (ServerPlayerEntity) (Object) this;
+        
+        // Note: Battle deaths are now handled in MixinLivingEntity_BattlePvp to prevent death screen
+        // This method only handles keep inventory and player head drops
+        
+        // Continue with keep inventory logic
         boolean keepInv = KeepInventoryFeature.shouldKeepInventory(player);
         boolean killedByOwnArrow = false;
         // Check if the source is a projectile from the player (self-inflicted bow

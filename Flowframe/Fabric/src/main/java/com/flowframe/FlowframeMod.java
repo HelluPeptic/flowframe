@@ -36,6 +36,7 @@ import com.flowframe.features.linked.LinkedCommandFeature;
 import com.flowframe.features.levitate.LevitateCommandFeature;
 import com.flowframe.features.inventoryrestore.InventoryRestoreFeature;
 import com.flowframe.features.countentities.CountEntitiesCommand;
+import com.flowframe.features.gungame.BattleFeature;
 
 public class FlowframeMod implements ModInitializer {
     @Override
@@ -57,6 +58,7 @@ public class FlowframeMod implements ModInitializer {
         LevitateCommandFeature.register();
         InventoryRestoreFeature.register();
         CountEntitiesCommand.register();
+        BattleFeature.register();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }
