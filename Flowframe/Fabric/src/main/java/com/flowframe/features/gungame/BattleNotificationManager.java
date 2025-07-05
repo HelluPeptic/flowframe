@@ -29,7 +29,7 @@ public class BattleNotificationManager {
     
     public void initialize(MinecraftServer server) {
         // Create config directory if it doesn't exist
-        File configDir = new File(server.getRunDirectory(), "config/flowframe");
+        File configDir = new File(server.getRunDirectory(), "config/flowframe/battles");
         if (!configDir.exists()) {
             configDir.mkdirs();
         }

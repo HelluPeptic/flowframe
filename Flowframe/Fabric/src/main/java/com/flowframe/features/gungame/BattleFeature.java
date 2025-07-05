@@ -13,6 +13,7 @@ public class BattleFeature {
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             Battle.getInstance().initialize(server);
             BattleNotificationManager.getInstance().initialize(server);
+            SpectatorPersistence.getInstance().initialize(server);
         });
         
         // Handle player disconnections during battle
@@ -21,6 +22,11 @@ public class BattleFeature {
             if (game.isPlayerInGame(handler.getPlayer().getUuid())) {
                 game.kickPlayer(handler.getPlayer().getUuid());
             }
+        });
+        
+        // Handle player joins to restore spectators
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            SpectatorPersistence.getInstance().handlePlayerJoin(handler.getPlayer());
         });
         
         // Cleanup when server stops
