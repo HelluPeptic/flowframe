@@ -17,9 +17,6 @@ Flowframe Mod Features:
 import com.flowframe.features.chatformat.ChatFormatFeature;
 
 import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
 
 import com.flowframe.features.oreannounce.OreAnnounceFeature;
 import com.flowframe.features.keepinventory.KeepInventoryFeature;
@@ -38,6 +35,7 @@ import com.flowframe.features.inventoryrestore.InventoryRestoreFeature;
 import com.flowframe.features.countentities.CountEntitiesCommand;
 import com.flowframe.features.gamerules.GameRulesFeature;
 import com.flowframe.features.gungame.BattleFeature;
+import com.flowframe.features.gamemode.GameModeCommands;
 
 public class FlowframeMod implements ModInitializer {
     @Override
@@ -61,6 +59,7 @@ public class FlowframeMod implements ModInitializer {
         CountEntitiesCommand.register();
         GameRulesFeature.register();
         BattleFeature.register();
+        GameModeCommands.register();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }
