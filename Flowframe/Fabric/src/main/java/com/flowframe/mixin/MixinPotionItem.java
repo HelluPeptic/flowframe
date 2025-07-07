@@ -13,11 +13,25 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
 
 @Mixin(PotionItem.class)
 public abstract class MixinPotionItem {
     private static final ThreadLocal<Boolean> flowframe$potionFlag = ThreadLocal.withInitial(() -> false);
     private static final int MIN_DURATION = 2 * 60 * 60 * 20;
+    
+    // Cache for HerbalBrews effects to avoid string comparisons
+    private static final Set<String> HERBAL_BREWS_EFFECTS = new HashSet<>();
+    static {
+        HERBAL_BREWS_EFFECTS.add("effect.herbalbrews.feral");
+        HERBAL_BREWS_EFFECTS.add("effect.herbalbrews.balanced");
+        HERBAL_BREWS_EFFECTS.add("effect.herbalbrews.tough");
+        HERBAL_BREWS_EFFECTS.add("effect.herbalbrews.lifeleech");
+        HERBAL_BREWS_EFFECTS.add("effect.herbalbrews.fortune");
+        HERBAL_BREWS_EFFECTS.add("effect.herbalbrews.bonding");
+        HERBAL_BREWS_EFFECTS.add("effect.herbalbrews.deeprush");
+    }
 
     // This method must be private for Mixin compatibility
     private static boolean flowframe$isApplyingPotionEffect() {
@@ -32,44 +46,59 @@ public abstract class MixinPotionItem {
         )
     )
     private boolean flowframe$onAddStatusEffect(LivingEntity entity, StatusEffectInstance effect) {
+        // Set flag and apply extended duration directly here to avoid double processing
         flowframe$potionFlag.set(true);
         try {
-            return entity.addStatusEffect(effect);
+            StatusEffectInstance extendedEffect = flowframe$createExtendedEffect(effect);
+            return entity.addStatusEffect(extendedEffect);
         } finally {
             flowframe$potionFlag.set(false);
         }
+    }
+    
+    private StatusEffectInstance flowframe$createExtendedEffect(StatusEffectInstance effect) {
+        if (effect == null || effect.isAmbient()) {
+            return effect;
+        }
+        
+        String effectId = effect.getEffectType().getTranslationKey();
+        boolean shouldExtend = effect.getDuration() < MIN_DURATION || HERBAL_BREWS_EFFECTS.contains(effectId);
+        
+        if (shouldExtend) {
+            return new StatusEffectInstance(
+                effect.getEffectType(),
+                MIN_DURATION,
+                effect.getAmplifier(),
+                effect.isAmbient(),
+                false, // Hide particles for performance
+                effect.shouldShowIcon()
+            );
+        }
+        
+        return effect;
     }
 
     @Inject(
         method = "finishUsing",
         at = @At("RETURN")
     )
-    private void flowframe$makePotionEffectsLonger(ItemStack stack, World world, LivingEntity user, CallbackInfoReturnable<ItemStack> cir) {
+    private void flowframe$handleSpecialCases(ItemStack stack, World world, LivingEntity user, CallbackInfoReturnable<ItemStack> cir) {
         if (world.isClient) return;
-        List<StatusEffectInstance> effects = PotionUtil.getPotionEffects(stack);
-        for (StatusEffectInstance effect : effects) {
-            // Exception: Always extend 'feral', 'balanced', 'tough', 'lifeleech', 'fortune', 'bonding', 'deeprush', and 'regeneration' from HerbalBrews
-            String effectId = effect.getEffectType().getTranslationKey();
-            boolean isFeral = effectId.equals("effect.herbalbrews.feral");
-            boolean isBalanced = effectId.equals("effect.herbalbrews.balanced");
-            boolean isTough = effectId.equals("effect.herbalbrews.tough");
-            boolean isLifeleech = effectId.equals("effect.herbalbrews.lifeleech");
-            boolean isFortune = effectId.equals("effect.herbalbrews.fortune");
-            boolean isBonding = effectId.equals("effect.herbalbrews.bonding");
-            boolean isDeeprush = effectId.equals("effect.herbalbrews.deeprush");
-            boolean isHerbalRegen = effectId.equals("effect.minecraft.regeneration") && stack.getTranslationKey().startsWith("item.herbalbrews.rooibos_tea");
-            if ((effect != null && !effect.isAmbient() && (effect.getDuration() < MIN_DURATION || isFeral || isBalanced || isTough || isLifeleech || isFortune || isBonding || isDeeprush)) || isHerbalRegen) {
-                StatusEffectInstance longer = new StatusEffectInstance(
-                    effect.getEffectType(),
+        
+        // Special case: Handle Rooibos Tea regeneration
+        if (stack.getTranslationKey().startsWith("item.herbalbrews.rooibos_tea")) {
+            StatusEffectInstance regenEffect = user.getStatusEffect(net.minecraft.entity.effect.StatusEffects.REGENERATION);
+            if (regenEffect != null && regenEffect.getDuration() < MIN_DURATION) {
+                StatusEffectInstance extendedRegen = new StatusEffectInstance(
+                    net.minecraft.entity.effect.StatusEffects.REGENERATION,
                     MIN_DURATION,
-                    effect.getAmplifier(),
-                    effect.isAmbient(),
+                    regenEffect.getAmplifier(),
+                    regenEffect.isAmbient(),
                     false,
-                    effect.shouldShowIcon()
+                    regenEffect.shouldShowIcon()
                 );
-                // Remove the old effect first to prevent stacking issues
-                user.removeStatusEffect(effect.getEffectType());
-                user.addStatusEffect(longer);
+                user.removeStatusEffect(net.minecraft.entity.effect.StatusEffects.REGENERATION);
+                user.addStatusEffect(extendedRegen);
             }
         }
     }
