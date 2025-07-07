@@ -102,6 +102,9 @@ public abstract class MixinLivingEntity_BattlePvp {
         team.eliminatePlayer(playerId);
         battle.getSpectators().add(playerId);
         
+        // Add to persistent spectators in case they disconnect
+        com.flowframe.features.gungame.SpectatorPersistence.getInstance().addSpectator(playerId);
+        
         // Immediately set to spectator mode
         player.changeGameMode(GameMode.SPECTATOR);
         

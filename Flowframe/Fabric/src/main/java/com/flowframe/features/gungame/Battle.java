@@ -435,7 +435,11 @@ public class Battle {
         originalGameModes.clear();
         originalPositions.clear();
         gameSpawnPoint = null;
-
+        resetColorAssignments();
+        
+        // Clear persistent spectators since the battle has ended
+        SpectatorPersistence.getInstance().clearAllSpectators();
+        
         broadcastToAll(Text.literal("Battle has ended. All players have been reset.")
             .formatted(Formatting.GREEN));
     }
@@ -447,6 +451,9 @@ public class Battle {
         
         ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
         BattleTeam team = playerTeams.get(playerId);
+        
+        // Check if player was a spectator (before removing them)
+        boolean wasSpectator = spectators.contains(playerId);
         
         // Remove from team
         team.removePlayer(playerId);
@@ -509,38 +516,225 @@ public class Battle {
         return true;
     }
     
-    public boolean nextRound() {
-        if (state != BattleState.WAITING_NEXT_ROUND) {
+    // Getter methods
+    public BattleState getState() {
+        return state;
+    }
+    
+    public boolean isPlayerInGame(UUID playerId) {
+        return playerTeams.containsKey(playerId);
+    }
+    
+    public BattleTeam getPlayerTeam(UUID playerId) {
+        return playerTeams.get(playerId);
+    }
+    
+    public boolean isBattleLeader(UUID playerId) {
+        return battleLeader != null && battleLeader.equals(playerId);
+    }
+    
+    public UUID getBattleLeader() {
+        return battleLeader;
+    }
+    
+    public int getCurrentRound() {
+        return currentRound;
+    }
+    
+    public int getTotalRounds() {
+        return totalRounds;
+    }
+    
+    public List<String> getAvailableTeams() {
+        return new ArrayList<>(teams.keySet());
+    }
+    
+    public BattleTeam getTeam(String teamName) {
+        return teams.get(teamName);
+    }
+    
+    public List<String> getAvailableTeamColors() {
+        return new ArrayList<>(availableColors);
+    }
+    
+    public List<String> getUnusedTeamColors() {
+        return availableColors.stream()
+            .filter(color -> !usedColors.contains(color))
+            .collect(java.util.stream.Collectors.toList());
+    }
+    
+    public boolean isSpectator(UUID playerId) {
+        return spectators.contains(playerId);
+    }
+    
+    public Set<UUID> getSpectators() {
+        return spectators;
+    }
+    
+    public boolean isPvpEnabled() {
+        return pvpEnabled;
+    }
+    
+    // Utility methods
+    private void resetColorAssignments() {
+        usedColors.clear();
+    }
+    
+    private Formatting getFormattingForColor(String color) {
+        switch (color.toLowerCase()) {
+            case "red":
+                return Formatting.RED;
+            case "blue":
+                return Formatting.BLUE;
+            case "green":
+                return Formatting.GREEN;
+            case "yellow":
+                return Formatting.YELLOW;
+            case "orange":
+                return Formatting.GOLD;
+            case "pink":
+                return Formatting.LIGHT_PURPLE;
+            case "purple":
+                return Formatting.DARK_PURPLE;
+            case "aqua":
+                return Formatting.AQUA;
+            case "lime":
+                return Formatting.GREEN;
+            case "brown":
+                return Formatting.GOLD;
+            case "magenta":
+                return Formatting.LIGHT_PURPLE;
+            case "cyan":
+                return Formatting.DARK_AQUA;
+            default:
+                return Formatting.WHITE;
+        }
+    }
+    
+    private String getColorFromFormatting(Formatting formatting) {
+        switch (formatting) {
+            case RED:
+                return "red";
+            case BLUE:
+                return "blue";
+            case GREEN:
+                return "green";
+            case YELLOW:
+                return "yellow";
+            case GOLD:
+                return "orange";
+            case LIGHT_PURPLE:
+                return "pink";
+            case DARK_PURPLE:
+                return "purple";
+            case AQUA:
+                return "aqua";
+            case DARK_AQUA:
+                return "cyan";
+            default:
+                return null;
+        }
+    }
+    
+    // Broadcasting methods
+    public void broadcastActionBarToAll(Text message) {
+        if (server == null) return;
+        
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            player.networkHandler.sendPacket(new OverlayMessageS2CPacket(message));
+        }
+    }
+    
+    public void broadcastToAll(Text message) {
+        if (server == null) return;
+        
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            player.sendMessage(message, false);
+        }
+    }
+    
+    public void broadcastToGamePlayers(Text message) {
+        if (server == null) return;
+        
+        for (UUID playerId : playerTeams.keySet()) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+            if (player != null) {
+                player.sendMessage(message, false);
+            }
+        }
+        
+        // Also send to spectators
+        for (UUID spectatorId : spectators) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(spectatorId);
+            if (player != null) {
+                player.sendMessage(message, false);
+            }
+        }
+    }
+    
+    // Scoreboard team management
+    private void createScoreboardTeam(BattleTeam team) {
+        if (server == null) return;
+        
+        String teamName = "battle_" + team.getName().toLowerCase();
+        Scoreboard scoreboard = server.getScoreboard();
+        
+        Team scoreboardTeam = scoreboard.getTeam(teamName);
+        if (scoreboardTeam == null) {
+            scoreboardTeam = scoreboard.addTeam(teamName);
+        }
+        
+        // Set team color
+        scoreboardTeam.setColor(team.getFormatting());
+        scoreboardTeam.setCollisionRule(AbstractTeam.CollisionRule.NEVER);
+        scoreboardTeam.setShowFriendlyInvisibles(true);
+    }
+    
+    private void addPlayerToScoreboardTeam(ServerPlayerEntity player, BattleTeam team) {
+        if (server == null) return;
+        
+        String teamName = "battle_" + team.getName().toLowerCase();
+        Scoreboard scoreboard = server.getScoreboard();
+        Team scoreboardTeam = scoreboard.getTeam(teamName);
+        
+        if (scoreboardTeam != null) {
+            scoreboard.addPlayerToTeam(player.getEntityName(), scoreboardTeam);
+        }
+    }
+    
+    private void removePlayerFromAllScoreboardTeams(ServerPlayerEntity player) {
+        if (server == null) return;
+        
+        Scoreboard scoreboard = server.getScoreboard();
+        Team playerTeam = scoreboard.getPlayerTeam(player.getEntityName());
+        
+        if (playerTeam != null) {
+            scoreboard.removePlayerFromTeam(player.getEntityName(), playerTeam);
+        }
+    }
+    
+    // Game management methods
+    public boolean shutdownGame() {
+        if (state == BattleState.INACTIVE) {
             return false;
         }
         
-        // Check if we have at least 2 teams with players
-        List<BattleTeam> availableTeams = teams.values().stream()
-            .filter(team -> !team.getAlivePlayers().isEmpty())
-            .toList();
-        
-        if (availableTeams.size() < 2) {
-            return false;
-        }
-        
-        // Start the game again
-        state = BattleState.COUNTDOWN;
-        startCountdown();
+        resetAllPlayers();
         return true;
     }
-
+    
     public boolean leaveGame(UUID playerId) {
         if (!playerTeams.containsKey(playerId)) {
             return false;
         }
         
-        // Only allow leaving during waiting periods or when game is not active
-        if (state != BattleState.WAITING && state != BattleState.WAITING_NEXT_ROUND) {
-            return false;
-        }
-        
         ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
         BattleTeam team = playerTeams.get(playerId);
+        
+        // Remove from persistent spectators if they were on a team
+        if (team != null) {
+            SpectatorPersistence.getInstance().removeSpectator(playerId);
+        }
         
         // Remove from team
         team.removePlayer(playerId);
@@ -552,12 +746,11 @@ public class Battle {
             removePlayerFromAllScoreboardTeams(player);
         }
         
-        // Reset player to original state only if we're in the first waiting period or have their original position
+        // Reset player
         if (player != null) {
             GameMode originalMode = originalGameModes.getOrDefault(playerId, GameMode.SURVIVAL);
             player.changeGameMode(originalMode);
             
-            // Only teleport to original position if it exists (from first round)
             BlockPos originalPos = originalPositions.get(playerId);
             if (originalPos != null) {
                 ServerWorld world = player.getServerWorld();
@@ -575,8 +768,7 @@ public class Battle {
         originalPositions.remove(playerId);
         
         // Remove empty team
-        if (team.getPlayerCount() == 0) {
-            // Free up the color when team is removed
+        if (team.isEmpty()) {
             String colorToFree = getColorFromFormatting(team.getFormatting());
             if (colorToFree != null) {
                 usedColors.remove(colorToFree);
@@ -596,246 +788,56 @@ public class Battle {
         // Update tablist for all players
         TablistUtil.updateTablistDisplayNamesForAll(server);
         
-        // Broadcast leave message
-        broadcastToGamePlayers(Text.literal(player != null ? player.getName().getString() : "Player" + " has left the game.")
-            .formatted(Formatting.GRAY));
+        // Check if game should end
+        if (state == BattleState.ACTIVE) {
+            checkGameEnd();
+        }
         
         return true;
     }
     
-    public boolean shutdownGame() {
-        if (state == BattleState.INACTIVE) {
-            return false;
-        }
-        
-        // Set state to ending to prevent further game actions
-        state = BattleState.ENDING;
-        pvpEnabled = false;
-        
-        // Broadcast shutdown message
-        broadcastToGamePlayers(Text.literal("Game has been shut down by an administrator!")
-            .formatted(Formatting.RED, Formatting.BOLD));
-        
-        // Reset all players immediately
-        resetAllPlayersToOriginalPositions();
-        
-        return true;
-    }
-    
-    private void resetAllPlayersToOriginalPositions() {
-        // Reset all players back to their original positions and game modes
-        for (UUID playerId : playerTeams.keySet()) {
-            ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
-            if (player != null) {
-                // Reset game mode first
-                GameMode originalMode = originalGameModes.getOrDefault(playerId, GameMode.SURVIVAL);
-                player.changeGameMode(originalMode);
-                
-                // Teleport to original position if available
-                BlockPos originalPos = originalPositions.get(playerId);
-                if (originalPos != null) {
-                    ServerWorld world = player.getServerWorld();
-                    player.teleport(world, originalPos.getX() + 0.5, originalPos.getY(), 
-                        originalPos.getZ() + 0.5, player.getYaw(), player.getPitch());
-                } else {
-                    // Fallback to game spawn if original position is not available
-                    if (gameSpawnPoint != null) {
-                        ServerWorld world = player.getServerWorld();
-                        player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
-                            gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
-                    }
-                }
-                
-                // Clear titles
-                player.networkHandler.sendPacket(new ClearTitleS2CPacket(true));
-            }
-        }
-        
-        // Reset game state
-        state = BattleState.INACTIVE;
-        pvpEnabled = false;
-        battleLeader = null; // Reset battle leader when game ends
-        
-        // Clean up scoreboard teams before clearing data
-        cleanupScoreboardTeams();
-        
-        playerTeams.clear();
-        teams.clear();
-        spectators.clear();
-        originalGameModes.clear();
-        originalPositions.clear();
-        gameSpawnPoint = null;
-        resetColorAssignments();
-        
-        // Update tablist for all players to remove team prefixes
-        TablistUtil.updateTablistDisplayNamesForAll(server);
-        
-        broadcastToAll(Text.literal("Battle has been shut down and all players have been reset.")
-            .formatted(Formatting.GREEN));
-    }
-
-    // Missing getter methods
-    public BattleState getState() {
-        return state;
-    }
-    
-    public boolean isPlayerInGame(UUID playerId) {
-        return playerTeams.containsKey(playerId);
-    }
-    
-    public BattleTeam getPlayerTeam(UUID playerId) {
-        return playerTeams.get(playerId);
-    }
-    
-    public boolean isPvpEnabled() {
-        return pvpEnabled;
-    }
-    
-    public Set<String> getAvailableTeams() {
-        return teams.keySet();
-    }
-    
-    /**
-     * Get a team by name
-     * @param teamName The team name
-     * @return The BattleTeam object, or null if not found
-     */
-    public BattleTeam getTeam(String teamName) {
-        return teams.get(teamName);
-    }
-    
-    /**
-     * Check if the given player is the battle leader
-     * @param playerId The UUID of the player to check
-     * @return true if the player is the battle leader, false otherwise
-     */
-    public boolean isBattleLeader(UUID playerId) {
-        return battleLeader != null && battleLeader.equals(playerId);
-    }
-    
-    /**
-     * Get the UUID of the battle leader
-     * @return The battle leader's UUID, or null if no battle is active
-     */
-    public UUID getBattleLeader() {
-        return battleLeader;
-    }
-    
-    public int getCurrentRound() {
-        return currentRound;
-    }
-    
-    public int getTotalRounds() {
-        return totalRounds;
-    }
-    
-    /**
-     * Get the set of spectators
-     * @return The set of spectator UUIDs
-     */
-    public Set<UUID> getSpectators() {
-        return spectators;
-    }
-    
-    /**
-     * Get the game spawn point
-     * @return The game spawn point, or null if no game is active
-     */
-    public BlockPos getGameSpawnPoint() {
-        return gameSpawnPoint;
-    }
-    
-    // Missing broadcast methods
-    private void broadcastToAll(Text message) {
-        if (server != null) {
-            server.getPlayerManager().broadcast(message, false);
-        }
-    }
-    
-    public void broadcastToGamePlayers(Text message) {
-        if (server != null) {
-            for (UUID playerId : playerTeams.keySet()) {
-                ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
-                if (player != null) {
-                    player.sendMessage(message, false);
-                }
-            }
-        }
-    }
-    
-    // Broadcast action bar message to all players on the server who have notifications enabled
-    private void broadcastActionBarToAll(Text message) {
-        if (server != null) {
-            BattleNotificationManager notificationManager = BattleNotificationManager.getInstance();
-            for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-                if (notificationManager.shouldReceiveNotifications(player.getUuid())) {
-                    player.networkHandler.sendPacket(new OverlayMessageS2CPacket(message));
-                }
-            }
-        }
-    }
-    
-    // Missing formatting method
-    private Formatting getFormattingForColor(String color) {
-        switch (color.toLowerCase()) {
-            case "red":
-                return Formatting.RED;
-            case "blue":
-                return Formatting.BLUE;
-            case "green":
-                return Formatting.GREEN;
-            case "yellow":
-                return Formatting.YELLOW;
-            case "orange":
-                return Formatting.GOLD;
-            case "pink":
-                return Formatting.LIGHT_PURPLE;
-            case "purple":
-                return Formatting.DARK_PURPLE;
-            case "aqua":
-                return Formatting.AQUA;
-            case "white":
-                return Formatting.WHITE;
-            case "black":
-                return Formatting.DARK_GRAY;
-            case "brown":
-                return Formatting.DARK_RED;
-            case "lime":
-                return Formatting.GREEN;
-            case "gray":
-                return Formatting.GRAY;
-            case "light_blue":
-                return Formatting.AQUA;
-            case "magenta":
-                return Formatting.LIGHT_PURPLE;
-            case "cyan":
-                return Formatting.DARK_AQUA;
-            default:
-                return Formatting.WHITE;
-        }
-    }
-
-    /**
-     * Reset color assignments for a new game
-     */
-    private void resetColorAssignments() {
-        usedColors.clear();
-    }
-
-    private void startNextRound() {
-        currentRound++;
-        
-        // Check if this was the last round
-        if (currentRound > totalRounds) {
-            // All rounds complete - end the battle series
-            completeBattleSeries();
+    public void eliminatePlayer(UUID playerId) {
+        if (!playerTeams.containsKey(playerId)) {
             return;
         }
         
-        state = BattleState.WAITING_NEXT_ROUND;
-        pvpEnabled = false;
+        ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+        BattleTeam team = playerTeams.get(playerId);
         
-        // Reset all players to survival mode and teleport to game spawn
+        if (team != null) {
+            // Add to persistent spectators since they were on a team
+            SpectatorPersistence.getInstance().addSpectator(playerId);
+            
+            // Remove from team and add to spectators
+            team.removePlayer(playerId);
+            spectators.add(playerId);
+            
+            // Set to spectator mode
+            if (player != null) {
+                player.changeGameMode(GameMode.SPECTATOR);
+            }
+            
+            // Check if game should end
+            if (state == BattleState.ACTIVE) {
+                checkGameEnd();
+            }
+        }
+    }
+    
+    public boolean nextRound() {
+        if (state != BattleState.WAITING_NEXT_ROUND) {
+            return false;
+        }
+        
+        startNextRound();
+        return true;
+    }
+    
+    private void startNextRound() {
+        currentRound++;
+        state = BattleState.COUNTDOWN;
+        
+        // Reset all players to survival mode and teleport to spawn
         for (UUID playerId : playerTeams.keySet()) {
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
             if (player != null) {
@@ -856,230 +858,13 @@ public class Battle {
         }
         spectators.clear();
         
+        // Clear persistent spectators for new round
+        SpectatorPersistence.getInstance().clearAllSpectators();
+        
         // Update tablist
         TablistUtil.updateTablistDisplayNamesForAll(server);
         
-        // Broadcast next round message and auto-start
-        broadcastToGamePlayers(Text.literal("Starting round " + currentRound + " of " + totalRounds + " in 5 seconds...")
-            .formatted(Formatting.YELLOW));
-        
-        // Auto-start next round after 5 seconds
-        scheduler.schedule(() -> {
-            if (state == BattleState.WAITING_NEXT_ROUND) {
-                state = BattleState.COUNTDOWN;
-                startCountdown();
-            }
-        }, 5000L, TimeUnit.MILLISECONDS);
-    }
-    
-    /**
-     * Get the color name from a Formatting enum
-     * @param formatting The formatting to convert
-     * @return The color name, or null if not found
-     */
-    private String getColorFromFormatting(Formatting formatting) {
-        if (formatting == Formatting.RED) return "red";
-        if (formatting == Formatting.BLUE) return "blue";
-        if (formatting == Formatting.GREEN) return "green";
-        if (formatting == Formatting.YELLOW) return "yellow";
-        if (formatting == Formatting.GOLD) return "orange";
-        if (formatting == Formatting.LIGHT_PURPLE) return "pink";
-        if (formatting == Formatting.DARK_PURPLE) return "purple";
-        if (formatting == Formatting.AQUA || formatting == Formatting.DARK_AQUA) return "aqua";
-        if (formatting == Formatting.DARK_GREEN) return "lime";
-        if (formatting == Formatting.DARK_RED) return "brown";
-        if (formatting == Formatting.DARK_AQUA) return "cyan";
-        return null;
-    }
-    
-    /**
-     * Get the list of available team colors
-     * @return List of available color names
-     */
-    public List<String> getAvailableTeamColors() {
-        return new ArrayList<>(availableColors);
-    }
-    
-    /**
-     * Get the list of available team colors that are not yet used
-     * @return List of unused color names
-     */
-    public List<String> getUnusedTeamColors() {
-        List<String> unused = new ArrayList<>(availableColors);
-        unused.removeAll(usedColors);
-        return unused;
-    }
-    
-    // ============= SCOREBOARD TEAM MANAGEMENT FOR NAMETAGS =============
-    
-    /**
-     * Create or update a scoreboard team for a battle team
-     * @param battleTeam The battle team to create a scoreboard team for
-     */
-    private void createScoreboardTeam(BattleTeam battleTeam) {
-        if (server == null) return;
-        
-        Scoreboard scoreboard = server.getScoreboard();
-        String teamName = "battle_" + battleTeam.getName().toLowerCase();
-        
-        // Remove existing team if it exists
-        Team existing = scoreboard.getTeam(teamName);
-        if (existing != null) {
-            scoreboard.removeTeam(existing);
-        }
-        
-        // Create new team
-        Team scoreboardTeam = scoreboard.addTeam(teamName);
-        if (scoreboardTeam != null) {
-            // Set team color for nametags
-            scoreboardTeam.setColor(battleTeam.getFormatting());
-            
-            // Optional: Set team display name
-            scoreboardTeam.setDisplayName(Text.literal(battleTeam.getDisplayName())
-                .formatted(battleTeam.getFormatting()));
-            
-            // Optional: Set team prefix/suffix for additional formatting
-            scoreboardTeam.setPrefix(Text.literal("").formatted(battleTeam.getFormatting()));
-            scoreboardTeam.setSuffix(Text.literal(""));
-            
-            // Set team options
-            scoreboardTeam.setCollisionRule(AbstractTeam.CollisionRule.NEVER);
-            scoreboardTeam.setNameTagVisibilityRule(AbstractTeam.VisibilityRule.ALWAYS);
-        }
-    }
-    
-    /**
-     * Add a player to their battle team's scoreboard team
-     * @param player The player to add
-     * @param battleTeam The battle team they belong to
-     */
-    private void addPlayerToScoreboardTeam(ServerPlayerEntity player, BattleTeam battleTeam) {
-        if (server == null) return;
-        
-        Scoreboard scoreboard = server.getScoreboard();
-        String teamName = "battle_" + battleTeam.getName().toLowerCase();
-        Team scoreboardTeam = scoreboard.getTeam(teamName);
-        
-        if (scoreboardTeam != null) {
-            // Remove player from any existing team first
-            removePlayerFromAllScoreboardTeams(player);
-            
-            // Add player to the new team
-            scoreboard.addPlayerToTeam(player.getName().getString(), scoreboardTeam);
-        }
-    }
-    
-    /**
-     * Remove a player from all scoreboard teams
-     * @param player The player to remove
-     */
-    private void removePlayerFromAllScoreboardTeams(ServerPlayerEntity player) {
-        if (server == null) return;
-        
-        Scoreboard scoreboard = server.getScoreboard();
-        String playerName = player.getName().getString();
-        
-        // Remove from current team if any
-        Team currentTeam = scoreboard.getPlayerTeam(playerName);
-        if (currentTeam != null) {
-            scoreboard.removePlayerFromTeam(playerName, currentTeam);
-        }
-    }
-    
-    /**
-     * Clean up all battle-related scoreboard teams
-     */
-    private void cleanupScoreboardTeams() {
-        if (server == null) return;
-        
-        Scoreboard scoreboard = server.getScoreboard();
-        
-        // Remove all battle teams
-        for (BattleTeam battleTeam : teams.values()) {
-            String teamName = "battle_" + battleTeam.getName().toLowerCase();
-            Team scoreboardTeam = scoreboard.getTeam(teamName);
-            if (scoreboardTeam != null) {
-                scoreboard.removeTeam(scoreboardTeam);
-            }
-        }
-    }
-    
-    /**
-     * Update scoreboard teams for all players in the battle
-     */
-    private void updateAllScoreboardTeams() {
-        if (server == null) return;
-        
-        // Create scoreboard teams for all battle teams
-        for (BattleTeam battleTeam : teams.values()) {
-            createScoreboardTeam(battleTeam);
-        }
-        
-        // Add all players to their respective scoreboard teams
-        for (Map.Entry<UUID, BattleTeam> entry : playerTeams.entrySet()) {
-            ServerPlayerEntity player = server.getPlayerManager().getPlayer(entry.getKey());
-            if (player != null) {
-                addPlayerToScoreboardTeam(player, entry.getValue());
-            }
-        }
-    }
-    
-    /**
-     * Check if a player is currently a spectator
-     * @param playerId The player's UUID
-     * @return True if the player is a spectator, false otherwise
-     */
-    public boolean isSpectator(UUID playerId) {
-        return spectators.contains(playerId);
-    }
-    
-    /**
-     * Manually eliminate a player from the battle (used for give up command)
-     * @param playerId The player's UUID
-     */
-    public void eliminatePlayer(UUID playerId) {
-        if (server == null) return;
-        
-        ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
-        if (player == null) return;
-        
-        // Use the same logic as handleBattleDeath but without damage checks
-        if (state != Battle.BattleState.ACTIVE) return;
-        
-        if (!isPlayerInGame(playerId)) return;
-        
-        BattleTeam team = getPlayerTeam(playerId);
-        if (team == null) return;
-        
-        // Add to spectators and eliminate from team
-        team.eliminatePlayer(playerId);
-        spectators.add(playerId);
-        
-        // Immediately set to spectator mode
-        player.changeGameMode(GameMode.SPECTATOR);
-        
-        // Heal the player to full health
-        player.setHealth(player.getMaxHealth());
-        
-        // No teleportation - let the player stay where they are as a spectator
-        
-        // Send elimination message
-        player.sendMessage(Text.literal("You have given up and are now spectating the battle.")
-            .formatted(Formatting.GRAY), false);
-        
-        // Broadcast elimination to all battle players
-        broadcastToGamePlayers(Text.literal("[")
-            .append(Text.literal(team.getDisplayName()).formatted(team.getFormatting()))
-            .append(Text.literal("] " + player.getName().getString() + " has given up!")));
-        
-        // Check if team is eliminated
-        if (team.isEmpty()) {
-            broadcastToGamePlayers(Text.literal("Team ")
-                .append(Text.literal(team.getDisplayName()).formatted(team.getFormatting()))
-                .append(Text.literal(" has been eliminated!")).formatted(Formatting.RED));
-        }
-        
-        // Check for game end
-        handlePlayerElimination();
+        // Start countdown
+        startCountdown();
     }
 }
