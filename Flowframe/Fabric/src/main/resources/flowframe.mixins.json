@@ -17,7 +17,7 @@
     "MixinServerWorld_NoNiftyCartsPlow",
     "MixinLivingEntity_PvpToggle",
     "MixinLivingEntity_RemoveSpelunker",
-    "MixinLivingEntity_PotionDuration",
+    "MixinLivingEntity_PotionDuration_Fast",
     "MixinLivingEntity_TipsyDuration",
     "MixinPotionItem",
     "MixinArmsWorkbenchBlocker",
