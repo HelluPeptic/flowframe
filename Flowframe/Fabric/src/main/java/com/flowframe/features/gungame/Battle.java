@@ -45,6 +45,8 @@ public class Battle {
     private UUID battleLeader; // The player who started the battle
     private int totalRounds = 1; // Total number of rounds to play
     private int currentRound = 0; // Current round number (0 = not started)
+    private BattleMode battleMode = BattleMode.ELIMINATION; // Current battle mode
+    private CaptureTheFlagManager ctfManager; // CTF manager for CTF mode
     
     public enum BattleState {
         INACTIVE,      // No game running
@@ -71,6 +73,10 @@ public class Battle {
     }
     
     public boolean bootGame(BlockPos spawnPoint, UUID battleLeaderId) {
+        return bootGame(spawnPoint, battleLeaderId, BattleMode.ELIMINATION);
+    }
+    
+    public boolean bootGame(BlockPos spawnPoint, UUID battleLeaderId, BattleMode mode) {
         if (state != BattleState.INACTIVE) {
             return false;
         }
@@ -79,6 +85,12 @@ public class Battle {
         this.state = BattleState.WAITING;
         this.pvpEnabled = false;
         this.battleLeader = battleLeaderId; // Set the battle leader
+        this.battleMode = mode;
+        
+        // Initialize CTF manager if needed
+        if (mode == BattleMode.CAPTURE_THE_FLAG) {
+            this.ctfManager = new CaptureTheFlagManager(this);
+        }
         
         // Clear any existing data
         playerTeams.clear();
@@ -89,15 +101,20 @@ public class Battle {
         resetColorAssignments();
         
         // Broadcast game start announcement using action bar messages
-        // First message: "A battle has started!" - shows for 4 seconds
-        broadcastActionBarToAll(Text.literal("A battle has started!")
+        // First message: "A [Mode] battle has started!" - shows for 4 seconds
+        broadcastActionBarToAll(Text.literal("A " + mode.getDisplayName() + " battle has started!")
             .formatted(Formatting.YELLOW));
         
-        // Second message: "Use /flowframe battle join <team> to join a team!" - shows for 7 seconds after the first
+        // Second message with mode description and join instructions
+        scheduler.schedule(() -> {
+            broadcastActionBarToAll(Text.literal(mode.getDescription())
+                .formatted(Formatting.GOLD));
+        }, 4000L, TimeUnit.MILLISECONDS);
+        
         scheduler.schedule(() -> {
             broadcastActionBarToAll(Text.literal("Use /flowframe battle join <team> to join a team!")
                 .formatted(Formatting.GREEN));
-        }, 4000L, TimeUnit.MILLISECONDS);
+        }, 8000L, TimeUnit.MILLISECONDS);
         
         return true;
     }
@@ -107,9 +124,16 @@ public class Battle {
             return false;
         }
         
-        // Validate that the team color is in our available colors list
-        if (!availableColors.contains(teamColor.toLowerCase())) {
-            return false;
+        // Special validation for CTF mode - only allow Red and Blue teams
+        if (battleMode == BattleMode.CAPTURE_THE_FLAG) {
+            if (!teamColor.equalsIgnoreCase("red") && !teamColor.equalsIgnoreCase("blue")) {
+                return false;
+            }
+        } else {
+            // Validate that the team color is in our available colors list for other modes
+            if (!availableColors.contains(teamColor.toLowerCase())) {
+                return false;
+            }
         }
         
         UUID playerId = player.getUuid();
@@ -192,6 +216,12 @@ public class Battle {
         totalRounds = 1;
         currentRound = 1;
         state = BattleState.COUNTDOWN;
+        
+        // Initialize CTF if needed
+        if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
+            ctfManager.initializeCTF(teams.keySet());
+        }
+        
         startCountdown();
         return true;
     }
@@ -213,6 +243,12 @@ public class Battle {
         totalRounds = rounds;
         currentRound = 1;
         state = BattleState.COUNTDOWN;
+        
+        // Initialize CTF if needed
+        if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
+            ctfManager.initializeCTF(teams.keySet());
+        }
+        
         startCountdown();
         return true;
     }
@@ -308,6 +344,16 @@ public class Battle {
     }
     
     private void checkGameEnd() {
+        // Check for CTF win first
+        if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
+            String ctfWinner = ctfManager.getWinningTeam();
+            if (ctfWinner != null) {
+                endGame(teams.get(ctfWinner));
+                return;
+            }
+        }
+        
+        // Check for elimination win
         List<BattleTeam> aliveTeams = teams.values().stream()
             .filter(team -> !team.isEmpty())
             .toList();
@@ -440,6 +486,12 @@ public class Battle {
         // Clear persistent spectators since the battle has ended
         SpectatorPersistence.getInstance().clearAllSpectators();
         
+        // Reset CTF if it was a CTF game
+        if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
+            ctfManager.cleanup();
+            ctfManager = null;
+        }
+        
         broadcastToAll(Text.literal("Battle has ended. All players have been reset.")
             .formatted(Formatting.GREEN));
     }
@@ -459,6 +511,11 @@ public class Battle {
         team.removePlayer(playerId);
         playerTeams.remove(playerId);
         spectators.remove(playerId);
+        
+        // Handle CTF cleanup if needed
+        if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null && player != null) {
+            ctfManager.handlePlayerLeave(player);
+        }
         
         // Remove from scoreboard team
         if (player != null) {
@@ -575,6 +632,26 @@ public class Battle {
         return pvpEnabled;
     }
     
+    public MinecraftServer getServer() {
+        return server;
+    }
+    
+    public Set<UUID> getGamePlayers() {
+        return new HashSet<>(playerTeams.keySet());
+    }
+    
+    public BattleMode getBattleMode() {
+        return battleMode;
+    }
+    
+    public CaptureTheFlagManager getCTFManager() {
+        return ctfManager;
+    }
+    
+    public Map<UUID, BattleTeam> getPlayerTeams() {
+        return playerTeams;
+    }
+
     // Utility methods
     private void resetColorAssignments() {
         usedColors.clear();
@@ -741,6 +818,11 @@ public class Battle {
         playerTeams.remove(playerId);
         spectators.remove(playerId);
         
+        // Handle CTF cleanup if needed
+        if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null && player != null) {
+            ctfManager.handlePlayerLeave(player);
+        }
+        
         // Remove from scoreboard team
         if (player != null) {
             removePlayerFromAllScoreboardTeams(player);
@@ -817,6 +899,11 @@ public class Battle {
                 player.changeGameMode(GameMode.SPECTATOR);
             }
             
+            // Handle CTF specific elimination
+            if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
+                ctfManager.handlePlayerElimination(playerId);
+            }
+            
             // Check if game should end
             if (state == BattleState.ACTIVE) {
                 checkGameEnd();
@@ -857,6 +944,11 @@ public class Battle {
             team.resetForNextRound();
         }
         spectators.clear();
+        
+        // Reset CTF for new round if applicable
+        if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
+            ctfManager.resetForNewRound();
+        }
         
         // Clear persistent spectators for new round
         SpectatorPersistence.getInstance().clearAllSpectators();

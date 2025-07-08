@@ -97,4 +97,29 @@ public abstract class MixinServerPlayerEntity {
             }
         }
     }
+    
+    @Inject(method = "tick", at = @At("HEAD"))
+    private void onPlayerTick(CallbackInfo ci) {
+        ServerPlayerEntity player = (ServerPlayerEntity) (Object) this;
+        
+        // CTF movement handling
+        try {
+            com.flowframe.features.gungame.Battle battle = com.flowframe.features.gungame.Battle.getInstance();
+            
+            // Only process if in CTF mode and battle is active
+            if (battle.getBattleMode() == com.flowframe.features.gungame.BattleMode.CAPTURE_THE_FLAG && 
+                battle.getState() == com.flowframe.features.gungame.Battle.BattleState.ACTIVE) {
+                
+                com.flowframe.features.gungame.CaptureTheFlagManager ctf = battle.getCTFManager();
+                if (ctf != null && battle.isPlayerInGame(player.getUuid())) {
+                    // Check for automatic flag interactions every few ticks to avoid spam
+                    if (player.age % 20 == 0) { // Check once per second
+                        ctf.handlePlayerMovement(player);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Silently ignore errors to prevent issues with other features
+        }
+    }
 }

@@ -3,6 +3,10 @@ package com.flowframe.features.gungame;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+import java.util.concurrent.CompletableFuture;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
@@ -15,6 +19,14 @@ import java.util.UUID;
 
 public class BattleCommand {
     
+    // Suggestion provider for battle modes
+    private static final SuggestionProvider<ServerCommandSource> GAMEMODE_SUGGESTIONS = 
+        (context, builder) -> {
+            builder.suggest("elimination");
+            builder.suggest("capture_the_flag");
+            return builder.buildFuture();
+        };
+    
     public static void register() {
         // Register the main battle commands
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
@@ -22,11 +34,13 @@ public class BattleCommand {
                 .then(CommandManager.literal("battle")
                     .then(CommandManager.literal("boot")
                         .requires(source -> hasLuckPermsPermission(source, "flowframe.command.battle.boot"))
-                        .executes(BattleCommand::bootGameHere)
-                        .then(CommandManager.argument("x", IntegerArgumentType.integer())
-                            .then(CommandManager.argument("y", IntegerArgumentType.integer())
-                                .then(CommandManager.argument("z", IntegerArgumentType.integer())
-                                    .executes(BattleCommand::bootGame)))))
+                        .then(CommandManager.argument("gamemode", StringArgumentType.string())
+                            .suggests(GAMEMODE_SUGGESTIONS)
+                            .executes(BattleCommand::bootGameHereWithMode)
+                            .then(CommandManager.argument("x", IntegerArgumentType.integer())
+                                .then(CommandManager.argument("y", IntegerArgumentType.integer())
+                                    .then(CommandManager.argument("z", IntegerArgumentType.integer())
+                                        .executes(BattleCommand::bootGameWithMode))))))
                     .then(CommandManager.literal("join")
                         .then(CommandManager.argument("team", StringArgumentType.string())
                             .executes(BattleCommand::joinTeam)))
@@ -44,6 +58,8 @@ public class BattleCommand {
                         .executes(BattleCommand::shutdownGame))
                     .then(CommandManager.literal("status")
                         .executes(BattleCommand::getStatus))
+                    .then(CommandManager.literal("help")
+                        .executes(BattleCommand::showHelp))
                     .then(CommandManager.literal("togglenotifications")
                         .executes(BattleCommand::toggleNotifications))
                     .then(CommandManager.literal("giveup")
@@ -52,6 +68,81 @@ public class BattleCommand {
         });
     }
     
+    private static int bootGameHereWithMode(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        String gameModeStr = StringArgumentType.getString(context, "gamemode");
+        
+        // Parse game mode
+        BattleMode mode = BattleMode.fromString(gameModeStr);
+        if (mode == null) {
+            source.sendError(Text.literal("Invalid game mode! Available modes: elimination, capture_the_flag"));
+            return 0;
+        }
+        
+        try {
+            ServerPlayerEntity player = source.getPlayer();
+            BlockPos playerPos = player.getBlockPos();
+            
+            if (Battle.getInstance().bootGame(playerPos, player.getUuid(), mode)) {
+                source.sendFeedback(() -> Text.literal("Started " + mode.getDisplayName() + " battle at your location: " + playerPos)
+                    .formatted(Formatting.GREEN), true);
+                return 1;
+            } else {
+                source.sendError(Text.literal("Failed to boot battle. A game might already be running."));
+                return 0;
+            }
+        } catch (Exception e) {
+            source.sendError(Text.literal("Failed to boot battle. Please try again."));
+            return 0;
+        }
+    }
+    
+    private static int bootGameWithMode(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        String gameModeStr = StringArgumentType.getString(context, "gamemode");
+        
+        // Parse game mode
+        BattleMode mode = BattleMode.fromString(gameModeStr);
+        if (mode == null) {
+            source.sendError(Text.literal("Invalid game mode! Available modes: elimination, capture_the_flag"));
+            return 0;
+        }
+        
+        try {
+            ServerPlayerEntity player = source.getPlayer();
+            // If not a player (console), check for admin permissions
+            if (!hasLuckPermsPermission(source, "flowframe.command.battle.boot")) {
+                source.sendError(Text.literal("Insufficient permissions."));
+                return 0;
+            }
+        } catch (Exception e) {
+            source.sendError(Text.literal("Failed to boot battle. Please try again."));
+            return 0;
+        }
+        
+        try {
+            ServerPlayerEntity player = source.getPlayer();
+            int x = IntegerArgumentType.getInteger(context, "x");
+            int y = IntegerArgumentType.getInteger(context, "y");
+            int z = IntegerArgumentType.getInteger(context, "z");
+            
+            BlockPos spawnPoint = new BlockPos(x, y, z);
+            
+            if (Battle.getInstance().bootGame(spawnPoint, player.getUuid(), mode)) {
+                source.sendFeedback(() -> Text.literal("Started " + mode.getDisplayName() + " battle at " + spawnPoint)
+                    .formatted(Formatting.GREEN), true);
+                return 1;
+            } else {
+                source.sendError(Text.literal("Failed to boot battle. A game might already be running."));
+                return 0;
+            }
+        } catch (Exception e) {
+            source.sendError(Text.literal("Failed to boot battle. Please try again."));
+            return 0;
+        }
+    }
+    
+    // Legacy methods for backward compatibility
     private static int bootGameHere(CommandContext<ServerCommandSource> context) {
         ServerCommandSource source = context.getSource();
         
@@ -240,11 +331,20 @@ public class BattleCommand {
             return 0;
         }
         
-        // Check if the color is valid
-        if (!game.getAvailableTeamColors().contains(teamColor)) {
-            source.sendError(Text.literal("Invalid team color! Available colors: " + 
-                String.join(", ", game.getAvailableTeamColors())));
-            return 0;
+        // Check if the color is valid based on battle mode
+        if (game.getBattleMode() == BattleMode.CAPTURE_THE_FLAG) {
+            // CTF mode only allows Red and Blue teams
+            if (!teamColor.equals("red") && !teamColor.equals("blue")) {
+                source.sendError(Text.literal("In Capture the Flag mode, only 'red' and 'blue' teams are allowed!"));
+                return 0;
+            }
+        } else {
+            // Regular mode uses available colors
+            if (!game.getAvailableTeamColors().contains(teamColor)) {
+                source.sendError(Text.literal("Invalid team color! Available colors: " + 
+                    String.join(", ", game.getAvailableTeamColors())));
+                return 0;
+            }
         }
         
         if (game.joinTeam(player, teamColor)) {
@@ -272,6 +372,10 @@ public class BattleCommand {
             .formatted(Formatting.YELLOW), false);
         
         if (game.getState() != Battle.BattleState.INACTIVE) {
+            // Show game mode
+            source.sendFeedback(() -> Text.literal("Game Mode: " + game.getBattleMode().getDisplayName())
+                .formatted(Formatting.AQUA), false);
+            
             // Show battle leader info
             UUID leaderId = game.getBattleLeader();
             if (leaderId != null) {
@@ -302,10 +406,15 @@ public class BattleCommand {
             
             // Show available colors for joining if battle is waiting
             if (game.getState() == Battle.BattleState.WAITING || game.getState() == Battle.BattleState.WAITING_NEXT_ROUND) {
-                java.util.List<String> unusedColors = game.getUnusedTeamColors();
-                if (!unusedColors.isEmpty()) {
-                    source.sendFeedback(() -> Text.literal("Available team colors: " + String.join(", ", unusedColors))
+                if (game.getBattleMode() == BattleMode.CAPTURE_THE_FLAG) {
+                    source.sendFeedback(() -> Text.literal("Available teams: Red, Blue (CTF Mode)")
                         .formatted(Formatting.GREEN), false);
+                } else {
+                    java.util.List<String> unusedColors = game.getUnusedTeamColors();
+                    if (!unusedColors.isEmpty()) {
+                        source.sendFeedback(() -> Text.literal("Available team colors: " + String.join(", ", unusedColors))
+                            .formatted(Formatting.GREEN), false);
+                    }
                 }
             }
         } else {
@@ -443,6 +552,48 @@ public class BattleCommand {
             .formatted(Formatting.YELLOW), false);
             return 1;
         }
+        return 1;
+    }
+
+    private static int showHelp(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        
+        // Build help message
+        Text helpMessage = Text.literal("=== FLOWFRAME BATTLE COMMANDS ===\n").formatted(Formatting.GOLD)
+            .append(Text.literal("/flowframe battle boot <gamemode> [x y z]").formatted(Formatting.YELLOW))
+            .append(Text.literal(" - Start a new battle\n").formatted(Formatting.WHITE))
+            .append(Text.literal("  Available modes: ").formatted(Formatting.GRAY))
+            .append(Text.literal("elimination, capture_the_flag\n").formatted(Formatting.AQUA))
+            
+            .append(Text.literal("/flowframe battle join <team>").formatted(Formatting.YELLOW))
+            .append(Text.literal(" - Join a team\n").formatted(Formatting.WHITE))
+            
+            .append(Text.literal("/flowframe battle start [rounds]").formatted(Formatting.YELLOW))
+            .append(Text.literal(" - Start the battle (host only)\n").formatted(Formatting.WHITE))
+            
+            .append(Text.literal("/flowframe battle leave").formatted(Formatting.YELLOW))
+            .append(Text.literal(" - Leave the current battle\n").formatted(Formatting.WHITE))
+            
+            .append(Text.literal("/flowframe battle status").formatted(Formatting.YELLOW))
+            .append(Text.literal(" - Show current battle status\n").formatted(Formatting.WHITE))
+            
+            .append(Text.literal("/flowframe battle giveup").formatted(Formatting.YELLOW))
+            .append(Text.literal(" - Give up and become spectator\n").formatted(Formatting.WHITE))
+            
+            .append(Text.literal("/flowframe battle help").formatted(Formatting.YELLOW))
+            .append(Text.literal(" - Show this help message\n").formatted(Formatting.WHITE))
+            
+            .append(Text.literal("\n=== CAPTURE THE FLAG SPECIFIC ===\n").formatted(Formatting.GOLD))
+            .append(Text.literal("• Only Red and Blue teams allowed\n").formatted(Formatting.WHITE))
+            .append(Text.literal("• Automatically pick up flags near enemy bases\n").formatted(Formatting.WHITE))
+            .append(Text.literal("• Automatically capture flags at your base\n").formatted(Formatting.WHITE))
+            .append(Text.literal("• Bases are marked with colored particles\n").formatted(Formatting.WHITE))
+            .append(Text.literal("• Flag carriers have special visual effects\n").formatted(Formatting.WHITE))
+            .append(Text.literal("• Use ").formatted(Formatting.WHITE))
+            .append(Text.literal("/flowframe battle ctf setbase <team>").formatted(Formatting.AQUA))
+            .append(Text.literal(" to set team bases\n").formatted(Formatting.WHITE));
+        
+        source.sendFeedback(() -> helpMessage, false);
         return 1;
     }
 
