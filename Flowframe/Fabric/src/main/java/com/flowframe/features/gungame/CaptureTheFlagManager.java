@@ -35,7 +35,10 @@ public class CaptureTheFlagManager {
     private final Map<String, Integer> teamScores = new ConcurrentHashMap<>();
     private final Map<UUID, String> carrierEffectTasks = new ConcurrentHashMap<>(); // Track effect tasks for each carrier
     private final int scoreToWin = 3; // First team to capture 3 flags wins
+    private final int roundTimeMinutes = 10; // CTF rounds last 10 minutes
     private ScheduledExecutorService particleScheduler;
+    private ScheduledExecutorService timerScheduler;
+    private boolean roundTimerActive = false;
     
     // CTF only supports Red and Blue teams
     private final List<String> allowedTeams = Arrays.asList("Red", "Blue");
@@ -45,6 +48,7 @@ public class CaptureTheFlagManager {
     public CaptureTheFlagManager(Battle battle) {
         this.battle = battle;
         this.particleScheduler = Executors.newScheduledThreadPool(1);
+        this.timerScheduler = Executors.newScheduledThreadPool(1);
     }
     
     /**
@@ -93,6 +97,13 @@ public class CaptureTheFlagManager {
     public void setFlagBase(String teamName, BlockPos basePos) {
         flagBases.put(teamName, basePos);
         startBaseParticles(teamName, basePos);
+    }
+    
+    /**
+     * Get flag base location for a team
+     */
+    public BlockPos getTeamBase(String teamName) {
+        return flagBases.get(teamName);
     }
     
     /**
@@ -215,6 +226,13 @@ public class CaptureTheFlagManager {
                 .formatted(Formatting.YELLOW)
         );
         
+        // Send personal message to the flag picker
+        player.sendMessage(
+            Text.literal("✓ You picked up the " + flagTeam + " flag! Return it to your base to score!")
+                .formatted(Formatting.GREEN, Formatting.BOLD),
+            true // Action bar
+        );
+        
         // Start visual effects for flag carrier
         startFlagCarrierEffects(player, flagTeam);
         
@@ -331,13 +349,29 @@ public class CaptureTheFlagManager {
      * Reset CTF state for new round
      */
     public void resetForNewRound() {
+        // Stop any existing timer
+        stopRoundTimer();
+        
         // Return all flags to base
         for (String team : flagBases.keySet()) {
             flagsAtBase.put(team, true);
         }
         flagCarriers.clear();
         
+        // Clear flag carrier effects
+        for (UUID playerId : new HashSet<>(carrierEffectTasks.keySet())) {
+            ServerPlayerEntity player = battle.getServer().getPlayerManager().getPlayer(playerId);
+            if (player != null) {
+                stopFlagCarrierEffects(player);
+            }
+        }
+        
         // Don't reset scores - they persist across rounds
+        
+        // Start new round timer when battle is active
+        if (battle.getState() == Battle.BattleState.ACTIVE) {
+            startRoundTimer();
+        }
     }
     
     /**
@@ -409,29 +443,43 @@ public class CaptureTheFlagManager {
         String playerTeamName = playerTeam.getName();
         BlockPos playerPos = player.getBlockPos();
         
-        // Remove debug message to avoid overwriting important action bar feedback
-        // player.sendMessage(
-        //     Text.literal("CTF Movement Check: " + playerTeamName + " at " + playerPos)
-        //         .formatted(Formatting.DARK_GRAY),
-        //     true // Action bar
-        // );
+        // Debug: Show basic info every 20 ticks (1 second) to reduce spam
+        if (player.age % 20 == 0) {
+            player.sendMessage(
+                Text.literal("CTF: " + playerTeamName + " at " + playerPos.getX() + "," + playerPos.getY() + "," + playerPos.getZ())
+                    .formatted(Formatting.DARK_GRAY),
+                true // Action bar
+            );
+        }
         
         // Check for automatic flag capture at own base
         if (isPlayerCarryingFlag(playerId)) {
             BlockPos ownBase = flagBases.get(playerTeamName);
             if (ownBase != null) {
-                int distance = playerPos.getManhattanDistance(ownBase);
-                // Remove debug message
-                // player.sendMessage(
-                //     Text.literal("Distance to own base: " + distance + " (need ≤3)")
-                //         .formatted(Formatting.GRAY),
-                //     true // Action bar
-                // );
+                double distance = Math.sqrt(playerPos.getSquaredDistance(ownBase));
                 
-                if (distance <= 3) {
+                // Debug: Show distance to own base when carrying flag
+                if (player.age % 10 == 0) { // More frequent when important
+                    player.sendMessage(
+                        Text.literal("Distance to " + playerTeamName + " base: " + String.format("%.1f", distance) + " (need ≤5.0)")
+                            .formatted(Formatting.YELLOW),
+                        true // Action bar
+                    );
+                }
+                
+                if (distance <= 5.0) {
                     if (tryAutoCapture(player)) {
                         return; // Successfully captured, no need to check pickup
                     }
+                }
+            } else {
+                // Debug: Show if own base is missing
+                if (player.age % 20 == 0) {
+                    player.sendMessage(
+                        Text.literal("Warning: " + playerTeamName + " base not found!")
+                            .formatted(Formatting.RED),
+                        true
+                    );
                 }
             }
         }
@@ -441,21 +489,49 @@ public class CaptureTheFlagManager {
             if (!teamName.equals(playerTeamName)) {
                 BlockPos enemyBase = flagBases.get(teamName);
                 if (enemyBase != null) {
-                    int distance = playerPos.getManhattanDistance(enemyBase);
-                    if (distance <= 3) {
-                        // Remove debug message
-                        // player.sendMessage(
-                        //     Text.literal("Near " + teamName + " base, distance: " + distance)
-                        //         .formatted(Formatting.GRAY),
-                        //     true // Action bar
-                        // );
+                    double distance = Math.sqrt(playerPos.getSquaredDistance(enemyBase));
+                    
+                    // Debug: Show when near enemy base
+                    if (distance <= 8.0 && player.age % 10 == 0) {
+                        boolean flagAtBase = flagsAtBase.getOrDefault(teamName, true);
+                        boolean canPickup = !isPlayerCarryingFlag(playerId);
                         
+                        player.sendMessage(
+                            Text.literal("Near " + teamName + " base: " + String.format("%.1f", distance) + 
+                                " | Flag at base: " + flagAtBase + " | Can pickup: " + canPickup)
+                                .formatted(distance <= 5.0 ? Formatting.GREEN : Formatting.YELLOW),
+                            true // Action bar
+                        );
+                    }
+                    
+                    if (distance <= 5.0) {
                         if (tryAutoPickup(player, teamName)) {
                             break; // Only try one pickup per tick
                         }
                     }
+                } else {
+                    // Debug: Show if enemy base is missing
+                    if (player.age % 40 == 0) {
+                        player.sendMessage(
+                            Text.literal("Warning: " + teamName + " base not found!")
+                                .formatted(Formatting.RED),
+                            true
+                        );
+                    }
                 }
             }
+        }
+        
+        // Debug: Show all team bases occasionally
+        if (player.age % 100 == 0) { // Every 5 seconds
+            StringBuilder bases = new StringBuilder("Bases: ");
+            for (Map.Entry<String, BlockPos> entry : flagBases.entrySet()) {
+                bases.append(entry.getKey()).append("=").append(entry.getValue()).append(" ");
+            }
+            player.sendMessage(
+                Text.literal(bases.toString()).formatted(Formatting.GRAY),
+                false // Chat
+            );
         }
     }
     
@@ -498,8 +574,8 @@ public class CaptureTheFlagManager {
             
             // Send personal message
             player.sendMessage(
-                Text.literal("You picked up the " + flagTeam + " flag! Return it to your base to score!")
-                    .formatted(Formatting.GREEN),
+                Text.literal("✓ You picked up the " + flagTeam + " flag! Return it to your base to score!")
+                    .formatted(Formatting.GREEN, Formatting.BOLD),
                 true // Action bar
             );
         }
@@ -601,44 +677,65 @@ public class CaptureTheFlagManager {
      */
     private void startFlagCarrierEffects(ServerPlayerEntity player, String flagTeam) {
         UUID playerId = player.getUuid();
-        stopFlagCarrierEffects(player);
+        
+        // Only stop effects if player is already being tracked, to avoid removing effects we just added
+        if (carrierEffectTasks.containsKey(playerId)) {
+            stopFlagCarrierEffects(player);
+        }
+        
         DustParticleEffect particleEffect = getTeamParticleEffect(flagTeam);
-        // Add glowing status effect
-        player.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 220, 0, false, false));
+        
+        // Add persistent glowing status effect
+        player.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 999999, 0, false, false, true));
+        
         String taskId = "carrier_" + playerId.toString();
         particleScheduler.scheduleAtFixedRate(() -> {
-            if (player.isRemoved() || !flagCarriers.containsKey(flagTeam) || 
-                !flagCarriers.get(flagTeam).equals(playerId)) {
-                stopFlagCarrierEffects(player);
-                return;
-            }
-            ServerWorld world = player.getServerWorld();
-            Vec3d pos = player.getPos();
-            for (int i = 0; i < 12; i++) {
-                double offsetX = (Math.random() - 0.5) * 1.2;
-                double offsetY = Math.random() * 1.8;
-                double offsetZ = (Math.random() - 0.5) * 1.2;
-                double x = pos.x + offsetX;
-                double y = pos.y + offsetY;
-                double z = pos.z + offsetZ;
-                world.spawnParticles(particleEffect, x, y, z, 1, 0.05, 0.05, 0.05, 0);
-            }
-            BattleTeam carrierTeam = battle.getPlayerTeam(playerId);
-            if (carrierTeam != null) {
-                Text title = Text.literal(player.getName().getString())
-                    .formatted(carrierTeam.getFormatting())
-                    .append(Text.literal(" has the ").formatted(Formatting.WHITE))
-                    .append(Text.literal(flagTeam + " flag!").formatted(battle.getTeam(flagTeam).getFormatting()));
-                for (UUID otherPlayerId : battle.getGamePlayers()) {
-                    if (!otherPlayerId.equals(playerId)) {
-                        ServerPlayerEntity otherPlayer = player.getServer().getPlayerManager().getPlayer(otherPlayerId);
-                        if (otherPlayer != null) {
-                            otherPlayer.sendMessage(title, true);
+            try {
+                if (player.isRemoved() || !flagCarriers.containsKey(flagTeam) || 
+                    !flagCarriers.get(flagTeam).equals(playerId)) {
+                    stopFlagCarrierEffects(player);
+                    return;
+                }
+                
+                // Refresh glowing effect to prevent it from expiring
+                player.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 999999, 0, false, false, true));
+                
+                ServerWorld world = player.getServerWorld();
+                Vec3d pos = player.getPos();
+                
+                // Create particle effects
+                for (int i = 0; i < 8; i++) {
+                    double offsetX = (Math.random() - 0.5) * 1.0;
+                    double offsetY = Math.random() * 1.5;
+                    double offsetZ = (Math.random() - 0.5) * 1.0;
+                    double x = pos.x + offsetX;
+                    double y = pos.y + offsetY;
+                    double z = pos.z + offsetZ;
+                    world.spawnParticles(particleEffect, x, y, z, 1, 0.05, 0.05, 0.05, 0);
+                }
+                
+                // Show carrier status to other players
+                BattleTeam carrierTeam = battle.getPlayerTeam(playerId);
+                if (carrierTeam != null) {
+                    Text title = Text.literal(player.getName().getString())
+                        .formatted(carrierTeam.getFormatting())
+                        .append(Text.literal(" has the ").formatted(Formatting.WHITE))
+                        .append(Text.literal(flagTeam + " flag!").formatted(battle.getTeam(flagTeam).getFormatting()));
+                    
+                    for (UUID otherPlayerId : battle.getGamePlayers()) {
+                        if (!otherPlayerId.equals(playerId)) {
+                            ServerPlayerEntity otherPlayer = player.getServer().getPlayerManager().getPlayer(otherPlayerId);
+                            if (otherPlayer != null) {
+                                otherPlayer.sendMessage(title, true);
+                            }
                         }
                     }
                 }
+            } catch (Exception e) {
+                // Silently handle any errors to prevent task crashes
             }
         }, 0, 1, TimeUnit.SECONDS);
+        
         carrierEffectTasks.put(playerId, taskId);
     }
     
@@ -705,6 +802,15 @@ public class CaptureTheFlagManager {
                 Text.literal("The " + carriedFlag + " flag was returned to base!")
                     .formatted(battle.getTeam(carriedFlag).getFormatting())
             );
+            
+            // Personal message to returning player if they caused the return
+            if (player != null) {
+                player.sendMessage(
+                    Text.literal("⚠ You dropped the " + carriedFlag + " flag! It has been returned to their base.")
+                        .formatted(Formatting.YELLOW, Formatting.BOLD),
+                    true // Action bar
+                );
+            }
         }
     }
     
@@ -757,6 +863,9 @@ public class CaptureTheFlagManager {
      * Clean up all CTF resources
      */
     public void cleanup() {
+        // Stop round timer
+        stopRoundTimer();
+        
         // Stop all particle effects
         if (particleScheduler != null && !particleScheduler.isShutdown()) {
             particleScheduler.shutdown();
@@ -766,6 +875,19 @@ public class CaptureTheFlagManager {
                 }
             } catch (InterruptedException e) {
                 particleScheduler.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+        
+        // Stop timer scheduler
+        if (timerScheduler != null && !timerScheduler.isShutdown()) {
+            timerScheduler.shutdown();
+            try {
+                if (!timerScheduler.awaitTermination(1, TimeUnit.SECONDS)) {
+                    timerScheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                timerScheduler.shutdownNow();
                 Thread.currentThread().interrupt();
             }
         }
@@ -785,5 +907,111 @@ public class CaptureTheFlagManager {
         teamFlags.clear();
         teamScores.clear();
         carrierEffectTasks.clear();
+    }
+    
+    /**
+     * Start the CTF round timer
+     */
+    public void startRoundTimer() {
+        if (roundTimerActive) return;
+        
+        roundTimerActive = true;
+        int totalSeconds = roundTimeMinutes * 60;
+        
+        // Show timer warnings at specific intervals
+        int[] warningTimes = {600, 300, 120, 60, 30, 10, 5, 4, 3, 2, 1}; // 10min, 5min, 2min, 1min, 30s, 10s, 5-1s
+        
+        for (int warningTime : warningTimes) {
+            if (warningTime < totalSeconds) {
+                timerScheduler.schedule(() -> {
+                    if (!roundTimerActive) return;
+                    
+                    String timeMessage;
+                    if (warningTime >= 60) {
+                        int minutes = warningTime / 60;
+                        timeMessage = minutes + " minute" + (minutes > 1 ? "s" : "") + " remaining";
+                    } else {
+                        timeMessage = warningTime + " second" + (warningTime > 1 ? "s" : "") + " remaining";
+                    }
+                    
+                    battle.broadcastToGamePlayers(
+                        Text.literal("⏰ CTF Timer: " + timeMessage + "!")
+                            .formatted(warningTime <= 30 ? Formatting.RED : Formatting.YELLOW)
+                    );
+                }, (totalSeconds - warningTime) * 1000L, TimeUnit.MILLISECONDS);
+            }
+        }
+        
+        // End the round when timer expires
+        timerScheduler.schedule(() -> {
+            if (!roundTimerActive) return;
+            endRoundByTimer();
+        }, totalSeconds * 1000L, TimeUnit.MILLISECONDS);
+        
+        // Start the timer display
+        battle.broadcastToGamePlayers(
+            Text.literal("⏰ CTF Round started! " + roundTimeMinutes + " minutes to capture flags!")
+                .formatted(Formatting.GREEN, Formatting.BOLD)
+        );
+    }
+    
+    /**
+     * Stop the CTF round timer
+     */
+    public void stopRoundTimer() {
+        roundTimerActive = false;
+    }
+    
+    /**
+     * End the round due to timer expiration
+     */
+    private void endRoundByTimer() {
+        if (!roundTimerActive) return;
+        
+        roundTimerActive = false;
+        
+        // Determine winner by score
+        String winningTeam = null;
+        int highestScore = -1;
+        boolean tie = false;
+        
+        for (Map.Entry<String, Integer> entry : teamScores.entrySet()) {
+            int score = entry.getValue();
+            if (score > highestScore) {
+                highestScore = score;
+                winningTeam = entry.getKey();
+                tie = false;
+            } else if (score == highestScore && highestScore > 0) {
+                tie = true;
+            }
+        }
+        
+        // Announce the result
+        if (tie || winningTeam == null || highestScore == 0) {
+            battle.broadcastToGamePlayers(
+                Text.literal("⏰ Time's up! The round ended in a draw.").formatted(Formatting.GRAY)
+            );
+            // For draws, continue to next round or end battle depending on settings
+            battle.handlePlayerElimination(); // This will check for game end conditions
+        } else {
+            BattleTeam team = battle.getTeam(winningTeam);
+            if (team != null) {
+                battle.broadcastToGamePlayers(
+                    Text.literal("⏰ Time's up! ")
+                        .append(Text.literal(team.getDisplayName()).formatted(team.getFormatting()))
+                        .append(Text.literal(" wins with " + highestScore + " captures!"))
+                        .formatted(Formatting.GOLD, Formatting.BOLD)
+                );
+                
+                // End the game or advance to next round
+                if (battle.getCurrentRound() >= battle.getTotalRounds()) {
+                    // End the entire battle
+                    battle.endGame(team);
+                } else {
+                    // Start next round
+                    battle.nextRound();
+                }
+            }
+        }
     }
 }

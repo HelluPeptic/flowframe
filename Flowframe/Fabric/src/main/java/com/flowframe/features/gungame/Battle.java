@@ -220,6 +220,7 @@ public class Battle {
         // Initialize CTF if needed
         if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
             ctfManager.initializeCTF(teams.keySet());
+            setupCTFBases(); // Add this line to set up team bases
         }
         
         startCountdown();
@@ -247,6 +248,7 @@ public class Battle {
         // Initialize CTF if needed
         if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
             ctfManager.initializeCTF(teams.keySet());
+            setupCTFBases(); // Add this line to set up team bases
         }
         
         startCountdown();
@@ -279,16 +281,39 @@ public class Battle {
     private void startGracePeriod() {
         state = BattleState.GRACE_PERIOD;
         
-        // Only teleport players if this is the first round (original game start)
-        // For subsequent rounds, players are already teleported in startNextRound
-        if (currentRound == 1) {
-            // Teleport all players to spawn point
+        // For CTF mode, always teleport players to their team bases after countdown
+        if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
             for (UUID playerId : playerTeams.keySet()) {
                 ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
                 if (player != null) {
-                    ServerWorld world = player.getServerWorld(); // Use player's current world
-                    player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
-                        gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
+                    BattleTeam playerTeam = playerTeams.get(playerId);
+                    if (playerTeam != null) {
+                        // Try to get the team's base position
+                        BlockPos teamBase = ctfManager.getTeamBase(playerTeam.getName());
+                        ServerWorld world = player.getServerWorld();
+                        
+                        if (teamBase != null) {
+                            // Teleport to team base
+                            player.teleport(world, teamBase.getX() + 0.5, teamBase.getY() + 1.0, 
+                                teamBase.getZ() + 0.5, player.getYaw(), player.getPitch());
+                        } else {
+                            // Fallback to game spawn point if base not set
+                            player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
+                                gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
+                        }
+                    }
+                }
+            }
+        } else {
+            // For other game modes, only teleport on first round
+            if (currentRound == 1) {
+                for (UUID playerId : playerTeams.keySet()) {
+                    ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+                    if (player != null) {
+                        ServerWorld world = player.getServerWorld(); // Use player's current world
+                        player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
+                            gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
+                    }
                 }
             }
         }
@@ -316,6 +341,11 @@ public class Battle {
     private void startActiveGame() {
         state = BattleState.ACTIVE;
         pvpEnabled = true;
+        
+        // Start CTF timer if in CTF mode
+        if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
+            ctfManager.startRoundTimer();
+        }
         
         // Notify all players that PvP is now active
         Text gameStartText = Text.literal("FIGHT!")
@@ -363,7 +393,7 @@ public class Battle {
         }
     }
     
-    private void endGame(BattleTeam winningTeam) {
+    public void endGame(BattleTeam winningTeam) {
         state = BattleState.ENDING;
         
         // Announce winner
@@ -930,11 +960,31 @@ public class Battle {
             if (player != null) {
                 player.changeGameMode(GameMode.SURVIVAL);
                 
-                // Teleport to game spawn point
-                if (gameSpawnPoint != null) {
-                    ServerWorld world = player.getServerWorld();
-                    player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
-                        gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
+                // For CTF mode, teleport players to their team bases if set, otherwise to spawn point
+                if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
+                    BattleTeam playerTeam = playerTeams.get(playerId);
+                    if (playerTeam != null) {
+                        // Try to get the team's base position
+                        BlockPos teamBase = ctfManager.getTeamBase(playerTeam.getName());
+                        ServerWorld world = player.getServerWorld();
+                        
+                        if (teamBase != null) {
+                            // Teleport to team base
+                            player.teleport(world, teamBase.getX() + 0.5, teamBase.getY() + 1.0, 
+                                teamBase.getZ() + 0.5, player.getYaw(), player.getPitch());
+                        } else {
+                            // Fallback to game spawn point if base not set
+                            player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
+                                gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
+                        }
+                    }
+                } else {
+                    // For other game modes, teleport to game spawn point
+                    if (gameSpawnPoint != null) {
+                        ServerWorld world = player.getServerWorld();
+                        player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
+                            gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
+                    }
                 }
             }
         }
@@ -958,5 +1008,29 @@ public class Battle {
         
         // Start countdown
         startCountdown();
+    }
+    
+    /**
+     * Set up CTF team bases automatically based on spawn point
+     */
+    private void setupCTFBases() {
+        if (ctfManager == null || gameSpawnPoint == null) return;
+        
+        // For now, create simple bases around the spawn point
+        // Red team base to the north, Blue team base to the south
+        int baseDistance = 50; // Distance from spawn point
+        
+        BlockPos redBase = new BlockPos(gameSpawnPoint.getX(), gameSpawnPoint.getY(), gameSpawnPoint.getZ() - baseDistance);
+        BlockPos blueBase = new BlockPos(gameSpawnPoint.getX(), gameSpawnPoint.getY(), gameSpawnPoint.getZ() + baseDistance);
+        
+        ctfManager.setFlagBase("Red", redBase);
+        ctfManager.setFlagBase("Blue", blueBase);
+        
+        // Broadcast base locations to all players
+        broadcastToGamePlayers(
+            Text.literal("CTF Bases Set! Red: " + redBase.getX() + "," + redBase.getY() + "," + redBase.getZ() + 
+                        " | Blue: " + blueBase.getX() + "," + blueBase.getY() + "," + blueBase.getZ())
+                .formatted(Formatting.GOLD)
+        );
     }
 }

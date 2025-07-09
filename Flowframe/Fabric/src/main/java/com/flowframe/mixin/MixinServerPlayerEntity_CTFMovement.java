@@ -30,7 +30,7 @@ public class MixinServerPlayerEntity_CTFMovement {
         }
         
         // Check for automatic flag interactions every few ticks to avoid spam
-        if (player.age % 20 == 0) { // Check once per second
+        if (player.age % 5 == 0) { // Check every 5 ticks (4 times per second) for responsive gameplay
             ctf.handlePlayerMovement(player);
         }
     }

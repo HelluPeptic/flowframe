@@ -112,8 +112,8 @@ public abstract class MixinServerPlayerEntity {
                 
                 com.flowframe.features.gungame.CaptureTheFlagManager ctf = battle.getCTFManager();
                 if (ctf != null && battle.isPlayerInGame(player.getUuid())) {
-                    // Check for automatic flag interactions every few ticks to avoid spam
-                    if (player.age % 20 == 0) { // Check once per second
+                    // Check for automatic flag interactions every 10ms (every 2 ticks at 20 TPS)
+                    if (player.age % 2 == 0) { // Check 10 times per second for responsiveness
                         ctf.handlePlayerMovement(player);
                     }
                 }

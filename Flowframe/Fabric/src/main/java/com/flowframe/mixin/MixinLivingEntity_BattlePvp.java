@@ -88,15 +88,64 @@ public abstract class MixinLivingEntity_BattlePvp {
             }
         }
     }
-    
-    private void handleBattleDeath(ServerPlayerEntity player, Battle battle) {
+      private void handleBattleDeath(ServerPlayerEntity player, Battle battle) {
         if (battle.getState() != Battle.BattleState.ACTIVE) return;
         
         java.util.UUID playerId = player.getUuid();
         if (!battle.isPlayerInGame(playerId)) return;
-        
+
         BattleTeam team = battle.getPlayerTeam(playerId);
         if (team == null) return;
+        
+        // Handle differently for CTF vs Elimination modes
+        if (battle.getBattleMode() == com.flowframe.features.gungame.BattleMode.CAPTURE_THE_FLAG) {
+            handleCTFDeath(player, battle, team);
+        } else {
+            handleEliminationDeath(player, battle, team);
+        }
+    }
+    
+    private void handleCTFDeath(ServerPlayerEntity player, Battle battle, BattleTeam team) {
+        java.util.UUID playerId = player.getUuid();
+        
+        // In CTF mode, players respawn at their base instead of being eliminated
+        // Heal the player to full health (since we prevented the death)
+        player.setHealth(player.getMaxHealth());
+        
+        // Handle flag dropping if carrying one
+        com.flowframe.features.gungame.CaptureTheFlagManager ctfManager = battle.getCTFManager();
+        if (ctfManager != null) {
+            ctfManager.handlePlayerElimination(playerId);
+        }
+        
+        // Show death message
+        player.sendMessage(Text.literal("You died! Respawning at your base...")
+            .formatted(Formatting.RED), false);
+        
+        // Teleport to team base after a short delay
+        player.getServer().execute(() -> {
+            try {
+                Thread.sleep(1000); // 1 second delay
+                if (ctfManager != null) {
+                    BlockPos teamBase = ctfManager.getTeamBase(team.getName());
+                    if (teamBase != null) {
+                        ServerWorld world = player.getServerWorld();
+                        player.teleport(world, teamBase.getX() + 0.5, teamBase.getY() + 1.0, 
+                            teamBase.getZ() + 0.5, player.getYaw(), player.getPitch());
+                        
+                        // Send respawn message
+                        player.sendMessage(Text.literal("Respawned at your base!")
+                            .formatted(Formatting.GREEN), true);
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+    }
+    
+    private void handleEliminationDeath(ServerPlayerEntity player, Battle battle, BattleTeam team) {
+        java.util.UUID playerId = player.getUuid();
         
         // Add to spectators and eliminate from team
         team.eliminatePlayer(playerId);
@@ -111,7 +160,13 @@ public abstract class MixinLivingEntity_BattlePvp {
         // Heal the player to full health (since we prevented the death)
         player.setHealth(player.getMaxHealth());
         
-        // No teleportation - let the player stay where they are as a spectator
+        // Handle CTF cleanup if needed
+        if (battle.getBattleMode() == com.flowframe.features.gungame.BattleMode.CAPTURE_THE_FLAG) {
+            com.flowframe.features.gungame.CaptureTheFlagManager ctfManager = battle.getCTFManager();
+            if (ctfManager != null) {
+                ctfManager.handlePlayerElimination(playerId);
+            }
+        }
         
         // Send elimination message
         player.sendMessage(Text.literal("You have been eliminated and are now spectating the battle.")
