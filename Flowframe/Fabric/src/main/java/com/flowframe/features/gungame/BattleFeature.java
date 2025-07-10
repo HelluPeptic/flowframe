@@ -8,6 +8,7 @@ public class BattleFeature {
     public static void register() {
         // Register commands
         BattleCommand.register();
+        CTFCommands.register();
         
         // Initialize battle when server starts
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
