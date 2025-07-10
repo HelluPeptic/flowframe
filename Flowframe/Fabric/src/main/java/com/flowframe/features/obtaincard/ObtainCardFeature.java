@@ -21,7 +21,9 @@ public class ObtainCardFeature {
                 .then(net.minecraft.server.command.CommandManager.literal("gambling_card")
                     .executes(context -> obtainCard(context.getSource().getPlayer(), "gambling_card", 3)))
                 .then(net.minecraft.server.command.CommandManager.literal("reverse_card")
-                    .executes(context -> obtainCard(context.getSource().getPlayer(), "reverse_card", 10))));
+                    .executes(context -> obtainCard(context.getSource().getPlayer(), "reverse_card", 10)))
+                .then(net.minecraft.server.command.CommandManager.literal("ivy")
+                    .executes(context -> obtainIvy(context.getSource().getPlayer()))));
         });
     }
 
@@ -52,6 +54,40 @@ public class ObtainCardFeature {
         ItemStack card = new ItemStack(Registries.ITEM.get(cardId));
         player.getInventory().insertStack(card);
         player.sendMessage(Text.literal("You obtained a " + cardType.replace('_', ' ') + "!").formatted(Formatting.GREEN), false);
+        return 1;
+    }
+
+    private static int obtainIvy(ServerPlayerEntity player) {
+        if (player == null) return 0;
+        
+        // Check if player has at least 1 diamond
+        int found = 0;
+        for (ItemStack stack : player.getInventory().main) {
+            if (stack.getItem() == Items.DIAMOND) {
+                found += stack.getCount();
+            }
+        }
+        
+        if (found < 1) {
+            player.sendMessage(Text.literal("Not enough Diamonds! Required: 1").formatted(Formatting.RED), false);
+            return 0;
+        }
+        
+        // Remove 1 diamond
+        for (int i = 0; i < player.getInventory().main.size(); i++) {
+            ItemStack stack = player.getInventory().main.get(i);
+            if (stack.getItem() == Items.DIAMOND) {
+                stack.decrement(1);
+                break;
+            }
+        }
+        
+        // Give 64 Verdant Vibes ivy
+        Identifier ivyId = new Identifier("verdantvibes", "ivy");
+        ItemStack ivy = new ItemStack(Registries.ITEM.get(ivyId), 64);
+        player.getInventory().insertStack(ivy);
+        
+        player.sendMessage(Text.literal("You obtained a stack of ivy!").formatted(Formatting.GREEN), false);
         return 1;
     }
 
