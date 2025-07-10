@@ -2,16 +2,17 @@ package com.flowframe.features.chatformat;
 
 import com.flowframe.features.gungame.Battle;
 import com.flowframe.features.gungame.BattleTeam;
+import com.flowframe.features.gungame.BattleMode;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;
 import net.luckperms.api.model.user.User;
 import net.luckperms.api.cacheddata.CachedMetaData;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
 import net.minecraft.network.packet.s2c.play.PlayerListHeaderS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import java.util.EnumSet;
 import java.util.Collections;
@@ -80,8 +81,15 @@ public class TablistUtil {
         if (game.isPlayerInGame(player.getUuid())) {
             BattleTeam team = game.getPlayerTeam(player.getUuid());
             if (team != null) {
+                String teamName = team.getDisplayName();
+                
+                // Check if this is CTF mode and player is team leader
+                if (game.getBattleMode() == BattleMode.CAPTURE_THE_FLAG && team.isTeamLeader(player.getUuid())) {
+                    teamName = teamName + " Leader";
+                }
+                
                 // Create team prefix with color
-                teamPrefix = "§" + getFormattingCode(team.getFormatting()) + "[" + team.getDisplayName() + "] §r";
+                teamPrefix = "§" + getFormattingCode(team.getFormatting()) + "[" + teamName + "] §r";
             }
         }
         

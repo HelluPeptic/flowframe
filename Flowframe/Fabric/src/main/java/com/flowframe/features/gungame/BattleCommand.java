@@ -5,7 +5,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.mojang.brigadier.suggestion.Suggestions;
-import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+
 import java.util.concurrent.CompletableFuture;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.server.command.CommandManager;
@@ -40,7 +40,21 @@ public class BattleCommand {
                             .then(CommandManager.argument("x", IntegerArgumentType.integer())
                                 .then(CommandManager.argument("y", IntegerArgumentType.integer())
                                     .then(CommandManager.argument("z", IntegerArgumentType.integer())
-                                        .executes(BattleCommand::bootGameWithMode))))))
+                                        .executes(BattleCommand::bootGameWithMode)))))
+                        .then(CommandManager.literal("capture_the_flag")
+                            .then(CommandManager.literal("time")
+                                .executes(BattleCommand::bootGameHereWithCTFTime)
+                                .then(CommandManager.argument("x", IntegerArgumentType.integer())
+                                    .then(CommandManager.argument("y", IntegerArgumentType.integer())
+                                        .then(CommandManager.argument("z", IntegerArgumentType.integer())
+                                            .executes(BattleCommand::bootGameWithCTFTime)))))
+                            .then(CommandManager.literal("score")
+                                .then(CommandManager.argument("value", IntegerArgumentType.integer(1, 50))
+                                    .executes(BattleCommand::bootGameHereWithCTFScore)
+                                    .then(CommandManager.argument("x", IntegerArgumentType.integer())
+                                        .then(CommandManager.argument("y", IntegerArgumentType.integer())
+                                            .then(CommandManager.argument("z", IntegerArgumentType.integer())
+                                                .executes(BattleCommand::bootGameWithCTFScore))))))))
                     .then(CommandManager.literal("join")
                         .then(CommandManager.argument("team", StringArgumentType.string())
                             .executes(BattleCommand::joinTeam)))
@@ -84,7 +98,7 @@ public class BattleCommand {
             BlockPos playerPos = player.getBlockPos();
             
             if (Battle.getInstance().bootGame(playerPos, player.getUuid(), mode)) {
-                source.sendFeedback(() -> Text.literal("Started " + mode.getDisplayName() + " battle at your location: " + playerPos)
+                source.sendFeedback(() -> Text.literal("Started " + mode.getDisplayName() + " battle at your location: " + playerPos.getX() + ", " + playerPos.getY() + ", " + playerPos.getZ())
                     .formatted(Formatting.GREEN), true);
                 return 1;
             } else {
@@ -129,7 +143,7 @@ public class BattleCommand {
             BlockPos spawnPoint = new BlockPos(x, y, z);
             
             if (Battle.getInstance().bootGame(spawnPoint, player.getUuid(), mode)) {
-                source.sendFeedback(() -> Text.literal("Started " + mode.getDisplayName() + " battle at " + spawnPoint)
+                source.sendFeedback(() -> Text.literal("Started " + mode.getDisplayName() + " battle at " + spawnPoint.getX() + ", " + spawnPoint.getY() + ", " + spawnPoint.getZ())
                     .formatted(Formatting.GREEN), true);
                 return 1;
             } else {
@@ -151,7 +165,7 @@ public class BattleCommand {
             BlockPos playerPos = player.getBlockPos();
             
             if (Battle.getInstance().bootGame(playerPos, player.getUuid())) {
-                source.sendFeedback(() -> Text.literal("Battle booted successfully at your location: " + playerPos)
+                source.sendFeedback(() -> Text.literal("Battle booted successfully at your location: " + playerPos.getX() + ", " + playerPos.getY() + ", " + playerPos.getZ())
                     .formatted(Formatting.GREEN), true);
                 return 1;
             } else {
@@ -188,7 +202,7 @@ public class BattleCommand {
             BlockPos spawnPoint = new BlockPos(x, y, z);
             
             if (Battle.getInstance().bootGame(spawnPoint, player.getUuid())) {
-                source.sendFeedback(() -> Text.literal("Battle booted successfully at " + spawnPoint)
+                source.sendFeedback(() -> Text.literal("Battle booted successfully at " + spawnPoint.getX() + ", " + spawnPoint.getY() + ", " + spawnPoint.getZ())
                     .formatted(Formatting.GREEN), true);
                 return 1;
             } else {
@@ -257,6 +271,13 @@ public class BattleCommand {
         
         Battle game = Battle.getInstance();
         Battle.BattleState state = game.getState();
+        
+        // Check if current battle mode is CTF - CTF doesn't support multiple rounds
+        if (game.getBattleMode() == BattleMode.CAPTURE_THE_FLAG) {
+            source.sendError(Text.literal("Capture the Flag battles are always single-round games. Use '/flowframe battle start' instead.")
+                .formatted(Formatting.RED));
+            return 0;
+        }
         
         // Check if player is the battle leader (unless they have admin permissions)
         try {
@@ -595,6 +616,112 @@ public class BattleCommand {
         
         source.sendFeedback(() -> helpMessage, false);
         return 1;
+    }
+
+    private static int bootGameWithCTFTime(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        try {
+            ServerPlayerEntity player = source.getPlayer();
+            if (!Permissions.check(source, "flowframe.battle.boot", 2)) {
+                source.sendError(Text.literal("Insufficient permissions."));
+                return 0;
+            }
+
+            BlockPos playerPos = player.getBlockPos();
+            
+            // Boot CTF game with time mode at player location
+            if (Battle.getInstance().bootGame(playerPos, player.getUuid(), BattleMode.CAPTURE_THE_FLAG, CTFMode.TIME, 0)) {
+                source.sendFeedback(() -> Text.literal("Booted Capture the Flag battle in time mode at your location: " + playerPos.getX() + ", " + playerPos.getY() + ", " + playerPos.getZ())
+                    .formatted(Formatting.GREEN), true);
+                return 1;
+            } else {
+                source.sendError(Text.literal("Failed to boot battle. A game might already be running."));
+                return 0;
+            }
+        } catch (Exception e) {
+            source.sendError(Text.literal("Error booting battle: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int bootGameWithCTFScore(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        try {
+            ServerPlayerEntity player = source.getPlayer();
+            if (!Permissions.check(source, "flowframe.battle.boot", 2)) {
+                source.sendError(Text.literal("Insufficient permissions."));
+                return 0;
+            }
+
+            BlockPos playerPos = player.getBlockPos();
+            int targetScore = IntegerArgumentType.getInteger(context, "value");
+            
+            // Boot CTF game with score mode at player location
+            if (Battle.getInstance().bootGame(playerPos, player.getUuid(), BattleMode.CAPTURE_THE_FLAG, CTFMode.SCORE, targetScore)) {
+                source.sendFeedback(() -> Text.literal("Booted Capture the Flag battle in score mode (first to " + targetScore + ") at your location: " + playerPos.getX() + ", " + playerPos.getY() + ", " + playerPos.getZ())
+                    .formatted(Formatting.GREEN), true);
+                return 1;
+            } else {
+                source.sendError(Text.literal("Failed to boot battle. A game might already be running."));
+                return 0;
+            }
+        } catch (Exception e) {
+            source.sendError(Text.literal("Error booting battle: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int bootGameHereWithCTFTime(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        try {
+            ServerPlayerEntity player = source.getPlayer();
+            if (!Permissions.check(source, "flowframe.battle.boot", 2)) {
+                source.sendError(Text.literal("Insufficient permissions."));
+                return 0;
+            }
+
+            BlockPos playerPos = player.getBlockPos();
+            
+            // Boot CTF game with time mode at player location
+            if (Battle.getInstance().bootGame(playerPos, player.getUuid(), BattleMode.CAPTURE_THE_FLAG, CTFMode.TIME, 0)) {
+                source.sendFeedback(() -> Text.literal("Booted Capture the Flag battle in time mode at your location: " + playerPos.getX() + ", " + playerPos.getY() + ", " + playerPos.getZ())
+                    .formatted(Formatting.GREEN), true);
+                return 1;
+            } else {
+                source.sendError(Text.literal("Failed to boot battle. A game might already be running."));
+                return 0;
+            }
+        } catch (Exception e) {
+            source.sendError(Text.literal("Error booting battle: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int bootGameHereWithCTFScore(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        try {
+            ServerPlayerEntity player = source.getPlayer();
+            if (!hasLuckPermsPermission(source, "flowframe.command.battle.boot")) {
+                source.sendError(Text.literal("Insufficient permissions."));
+                return 0;
+            }
+
+            BlockPos playerPos = player.getBlockPos();
+            int targetScore = IntegerArgumentType.getInteger(context, "value");
+            
+            // Boot CTF game with score mode at player location
+            if (Battle.getInstance().bootGame(playerPos, player.getUuid(), BattleMode.CAPTURE_THE_FLAG, CTFMode.SCORE, targetScore)) {
+                source.sendFeedback(() -> Text.literal("Booted Capture the Flag battle in score mode (first to " + targetScore + ") at your location: " + playerPos.getX() + ", " + playerPos.getY() + ", " + playerPos.getZ())
+                    .formatted(Formatting.GREEN), true);
+                return 1;
+            } else {
+                source.sendError(Text.literal("Failed to boot battle. A game might already be running."));
+                return 0;
+            }
+        } catch (Exception e) {
+            source.sendError(Text.literal("Error booting battle: " + e.getMessage()));
+            return 0;
+        }
     }
 
     private static boolean hasLuckPermsPermission(ServerCommandSource source, String permission) {

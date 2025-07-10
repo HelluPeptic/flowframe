@@ -197,6 +197,30 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
 - **Commands:** None
 - **Permissions:** None (automatic)
 
+### 26. Capture the Flag (CTF) Game Mode
+
+- **Description:** A team-based objective game mode where Red and Blue teams compete to capture each other's flags and return them to their own base. Features persistent base locations, automatic flag mechanics, and multiple victory conditions.
+- **Commands:**
+  - `/flowframe battle boot capture_the_flag time` – Boot a time-based CTF battle (10-minute rounds).
+  - `/flowframe battle boot capture_the_flag score <target>` – Boot a score-based CTF battle with target score.
+  - `/flowframe ctf setbase <team> [x] [y] [z]` – Set team flag base at coordinates or current location (team leader only).
+  - `/flowframe ctf status` – View current CTF game status, scores, and flag locations.
+  - `/flowframe ctf bases` – List all team flag base locations.
+- **Permissions:**
+  - Boot CTF: `flowframe.command.battle.boot` (or operator level 2+)
+  - Set bases: Team leader status required
+  - Other commands: Available to all players
+- **Features:**
+  - **Two-Team System:** Red vs Blue team competition with automatic team color integration
+  - **Persistent Bases:** Flag base locations and particles persist between battles and server restarts
+  - **Team Leader Control:** Only team leaders can set or move flag bases (prevents griefing)
+  - **Automatic Flag Mechanics:** Walk near enemy base to pick up flag, return to your base to capture
+  - **Visual Effects:** Continuous colored particle effects mark base locations, flag carriers glow with flag team colors
+  - **Respawn System:** 10-second respawn delay with spectator mode, respawn at team base
+  - **Multiple Game Modes:** Time-based (10 minutes) or score-based (first to target) victory conditions
+  - **Flag Requirements:** Your own flag must be at base to capture enemy flags (strategic defense element)
+  - **Real-time Feedback:** Action bar messages, sound effects, and score updates for all major events
+
 ---
 
 ## Permissions
@@ -228,6 +252,9 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
   - `flowframe.command.minetracer.page`
   - `flowframe.feature.armsworkbench`
   - `flowframe.command.battle.boot`
+  - `flowframe.command.ctf.setbase` (requires team leader status)
+  - `flowframe.command.ctf.status`
+  - `flowframe.command.ctf.bases`
 
 ---
 

@@ -10,6 +10,7 @@ public class BattleTeam {
     private Formatting formatting;
     private final Map<UUID, String> players = new ConcurrentHashMap<>();
     private final Set<UUID> eliminatedPlayers = ConcurrentHashMap.newKeySet();
+    private UUID teamLeader; // First player to join becomes team leader
     
     public BattleTeam(String name, Formatting formatting) {
         this.name = name;
@@ -19,11 +20,17 @@ public class BattleTeam {
     public void addPlayer(UUID playerId, String playerName) {
         players.put(playerId, playerName);
         eliminatedPlayers.remove(playerId); // In case they rejoin
+        if (teamLeader == null) {
+            teamLeader = playerId; // Set the first player as team leader
+        }
     }
     
     public void removePlayer(UUID playerId) {
         players.remove(playerId);
         eliminatedPlayers.remove(playerId);
+        if (playerId.equals(teamLeader)) {
+            teamLeader = players.keySet().stream().findFirst().orElse(null); // Reassign team leader if the current leader leaves
+        }
     }
     
     public void eliminatePlayer(UUID playerId) {
@@ -90,6 +97,42 @@ public class BattleTeam {
     
     public int getAlivePlayerCount() {
         return players.size() - eliminatedPlayers.size();
+    }
+    
+    /**
+     * Get the team leader (first player to join)
+     */
+    public UUID getTeamLeader() {
+        return teamLeader;
+    }
+    
+    /**
+     * Check if a player is the team leader
+     */
+    public boolean isTeamLeader(UUID playerId) {
+        return teamLeader != null && teamLeader.equals(playerId);
+    }
+    
+    /**
+     * Get the team leader's name for display purposes
+     */
+    public String getTeamLeaderName() {
+        if (teamLeader != null && players.containsKey(teamLeader)) {
+            return players.get(teamLeader);
+        }
+        return null;
+    }
+    
+    /**
+     * Reset team leader (used when leader leaves and team needs new leader)
+     */
+    public void reassignTeamLeader() {
+        if (players.isEmpty()) {
+            teamLeader = null;
+        } else {
+            // Assign leadership to the first remaining player
+            teamLeader = players.keySet().iterator().next();
+        }
     }
     
     @Override

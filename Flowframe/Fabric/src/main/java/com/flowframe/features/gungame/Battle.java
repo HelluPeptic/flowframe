@@ -48,6 +48,9 @@ public class Battle {
     private BattleMode battleMode = BattleMode.ELIMINATION; // Current battle mode
     private CaptureTheFlagManager ctfManager; // CTF manager for CTF mode
     
+    // Static storage for CTF bases that persist across battle restarts
+    private static final Map<String, BlockPos> persistentCTFBases = new ConcurrentHashMap<>();
+    
     public enum BattleState {
         INACTIVE,      // No game running
         WAITING,       // Game booted, waiting for players to join teams
@@ -77,6 +80,10 @@ public class Battle {
     }
     
     public boolean bootGame(BlockPos spawnPoint, UUID battleLeaderId, BattleMode mode) {
+        return bootGame(spawnPoint, battleLeaderId, mode, CTFMode.TIME, 5);
+    }
+    
+    public boolean bootGame(BlockPos spawnPoint, UUID battleLeaderId, BattleMode mode, CTFMode ctfMode, int targetScore) {
         if (state != BattleState.INACTIVE) {
             return false;
         }
@@ -90,6 +97,10 @@ public class Battle {
         // Initialize CTF manager if needed
         if (mode == BattleMode.CAPTURE_THE_FLAG) {
             this.ctfManager = new CaptureTheFlagManager(this);
+            this.ctfManager.setCTFMode(ctfMode);
+            if (ctfMode == CTFMode.SCORE) {
+                this.ctfManager.setTargetScore(targetScore);
+            }
         }
         
         // Clear any existing data
@@ -199,6 +210,10 @@ public class Battle {
         return true;
     }
     
+    public BattleMode getBattleMode() {
+        return battleMode;
+    }
+    
     public boolean startGame() {
         if ((state != BattleState.WAITING && state != BattleState.WAITING_NEXT_ROUND) || teams.size() < 2) {
             return false;
@@ -292,13 +307,8 @@ public class Battle {
                 if (player != null) {
                     BattleTeam playerTeam = playerTeams.get(playerId);
                     if (playerTeam != null) {
-                        // Debug: Show what team name we're looking for
-                        System.out.println("CTF DEBUG: Looking for base for team '" + playerTeam.getName() + "'");
-                        System.out.println("CTF DEBUG: Player " + player.getName().getString() + " is on team '" + playerTeam.getName() + "'");
-                        
                         // Try to get the team's base position
                         BlockPos teamBase = ctfManager.getTeamBase(playerTeam.getName());
-                        System.out.println("CTF DEBUG: Retrieved base for '" + playerTeam.getName() + "' = " + teamBase);
                         
                         ServerWorld world = player.getServerWorld();
                         
@@ -356,9 +366,11 @@ public class Battle {
         state = BattleState.ACTIVE;
         pvpEnabled = true;
         
-        // Start CTF timer if in CTF mode
+        // Start CTF timer if in CTF mode and ensure particles are active
         if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
             ctfManager.startRoundTimer();
+            // Ensure all base particles are active at game start
+            ctfManager.ensureBaseParticlesActive();
         }
         
         // Notify all players that PvP is now active
@@ -472,9 +484,9 @@ public class Battle {
         }
         spectators.clear();
         
-        // Clear only flag carrier effects when battle series ends (keep bases)
+        // Clear only flag carrier effects when battle series ends (keep bases and particles)
         if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
-            ctfManager.reset(); // This now preserves bases but clears effects
+            ctfManager.resetButKeepBases(); // This preserves bases AND particles
         }
         
         // Update tablist
@@ -535,10 +547,13 @@ public class Battle {
         // Clear persistent spectators since the battle has ended
         SpectatorPersistence.getInstance().clearAllSpectators();
         
-        // Reset CTF if it was a CTF game
+        // Reset CTF if it was a CTF game (full shutdown - clear everything)
         if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
-            ctfManager.cleanup();
+            // For shutdown, completely clear everything including particles and bases
+            ctfManager.shutdownAndClearAll();
             ctfManager = null;
+            // Clear persistent bases too since battle is being shut down
+            clearPersistentCTFBases();
         }
         
         broadcastToAll(Text.literal("Battle has ended. All players have been reset.")
@@ -687,10 +702,6 @@ public class Battle {
     
     public Set<UUID> getGamePlayers() {
         return new HashSet<>(playerTeams.keySet());
-    }
-    
-    public BattleMode getBattleMode() {
-        return battleMode;
     }
     
     public CaptureTheFlagManager getCTFManager() {
@@ -1054,5 +1065,33 @@ public class Battle {
                         " | Blue: " + blueBase.getX() + "," + blueBase.getY() + "," + blueBase.getZ())
                 .formatted(Formatting.GOLD)
         );
+    }
+
+    public static boolean boot(String gameMode, BlockPos position, CTFMode ctfMode, int targetScore) {
+        BattleMode mode = BattleMode.fromString(gameMode);
+        if (mode == null) return false;
+        
+        // Use the existing UUID from the previous command context - for now just use a dummy leader
+        UUID dummyLeader = UUID.randomUUID(); // TODO: Get from command context
+        return getInstance().bootGame(position, dummyLeader, mode, ctfMode, targetScore);
+    }
+
+
+
+    public BlockPos getGameSpawnPoint() {
+        return gameSpawnPoint;
+    }
+
+    public static void saveCTFBases(Map<String, BlockPos> bases) {
+        persistentCTFBases.clear();
+        persistentCTFBases.putAll(bases);
+    }
+    
+    public static Map<String, BlockPos> getPersistentCTFBases() {
+        return new HashMap<>(persistentCTFBases);
+    }
+    
+    public static void clearPersistentCTFBases() {
+        persistentCTFBases.clear();
     }
 }

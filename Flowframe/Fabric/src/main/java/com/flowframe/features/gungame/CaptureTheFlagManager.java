@@ -23,11 +23,13 @@ import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.Team;
 import net.minecraft.scoreboard.AbstractTeam;
+import net.minecraft.world.GameMode;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 public class CaptureTheFlagManager {
@@ -37,10 +39,18 @@ public class CaptureTheFlagManager {
     private final Map<String, ItemStack> teamFlags = new ConcurrentHashMap<>();
     private final Map<String, Integer> teamScores = new ConcurrentHashMap<>();
     private final Map<UUID, String> carrierEffectTasks = new ConcurrentHashMap<>(); // Track effect tasks for each carrier
+    private final Map<UUID, Long> respawnDelayTasks = new ConcurrentHashMap<>(); // Track respawn delays for players
+    private final Set<UUID> playersInSpectatorMode = ConcurrentHashMap.newKeySet(); // Players temporarily in spectator mode
+    private final Map<String, ScheduledFuture<?>> particleTasks = new ConcurrentHashMap<>(); // Track particle tasks per team
     private final int roundTimeMinutes = 10; // CTF rounds last 10 minutes
+    private final int respawnDelaySeconds = 10; // Respawn delay in seconds
     private ScheduledExecutorService particleScheduler;
     private ScheduledExecutorService timerScheduler;
     private boolean roundTimerActive = false;
+    
+    // CTF game mode settings
+    private CTFMode ctfMode = CTFMode.TIME; // Default to time-based mode
+    private int targetScore = 5; // Default target score for score-based mode
     
     // CTF only supports Red and Blue teams
     private final List<String> allowedTeams = Arrays.asList("Red", "Blue");
@@ -51,6 +61,19 @@ public class CaptureTheFlagManager {
         this.battle = battle;
         this.particleScheduler = Executors.newScheduledThreadPool(1);
         this.timerScheduler = Executors.newScheduledThreadPool(1);
+        
+        // Restore any persistent CTF bases that were saved from previous battles
+        Map<String, BlockPos> persistentBases = Battle.getPersistentCTFBases();
+        if (!persistentBases.isEmpty()) {
+            flagBases.putAll(persistentBases);
+            // Start particle effects for all restored bases
+            for (Map.Entry<String, BlockPos> entry : persistentBases.entrySet()) {
+                String teamName = entry.getKey();
+                BlockPos basePos = entry.getValue();
+                startBaseParticles(teamName, basePos);
+                flagsAtBase.put(teamName, true); // Flag starts at base
+            }
+        }
     }
     
     /**
@@ -84,7 +107,7 @@ public class CaptureTheFlagManager {
         // Ensure we have exactly Red and Blue teams
         if (validTeams.size() != 2) {
             // If teams don't exist properly, something is wrong with initialization
-            System.err.println("CTF Warning: Expected exactly 2 teams (Red/Blue), found: " + validTeams);
+            // Warn if not exactly Red/Blue teams but continue with CTF anyway
             // Use the team names as they exist in Battle, not hardcoded values
             validTeams.clear();
             for (String teamName : teamNames) {
@@ -112,24 +135,50 @@ public class CaptureTheFlagManager {
             }
         }
     }
-      /**
+    /**
      * Set flag base location for a team and start particle effects
+     * Can only be set by team leader and only during non-active game states
      */
-    public void setFlagBase(String teamName, BlockPos basePos) {
+    public boolean setFlagBase(String teamName, BlockPos basePos, UUID playerId) {
+        // Check if game is active (bases can't be moved during active games)
+        if (battle.getState() == Battle.BattleState.ACTIVE) {
+            return false; // Can't set base during active game
+        }
+        
+        // Check if player is team leader
+        BattleTeam team = battle.getTeam(teamName);
+        if (team == null || !team.isTeamLeader(playerId)) {
+            return false; // Only team leader can set base
+        }
+        
         // Normalize team name to match Battle's naming convention (capitalize first letter)
         String normalizedTeamName = teamName.substring(0, 1).toUpperCase() + teamName.substring(1).toLowerCase();
         
-        System.out.println("CTF DEBUG: Setting base for team '" + teamName + "' (normalized: '" + normalizedTeamName + "') at position " + basePos);
+        // Stop existing particle effects for this team if they exist
+        stopBaseParticles(normalizedTeamName);
+        
+        // Check if base already exists (replacing existing base)
+        boolean isReplacing = flagBases.containsKey(normalizedTeamName);
         
         // Store with normalized name
         flagBases.put(normalizedTeamName, basePos);
         
-        // Debug: Print all current bases
-        System.out.println("CTF DEBUG: All bases after setting:");
-        for (Map.Entry<String, BlockPos> entry : flagBases.entrySet()) {
-            System.out.println("  Team '" + entry.getKey() + "' -> " + entry.getValue());
-        }
+        startBaseParticles(normalizedTeamName, basePos);
         
+        return true; // Successfully set base
+    }
+    
+    /**
+     * Legacy method for backwards compatibility - should be updated to use new method
+     */
+    public void setFlagBase(String teamName, BlockPos basePos) {
+        // This method is kept for backwards compatibility but should be updated
+        String normalizedTeamName = teamName.substring(0, 1).toUpperCase() + teamName.substring(1).toLowerCase();
+        
+        // Stop existing particle effects for this team if they exist
+        stopBaseParticles(normalizedTeamName);
+        
+        flagBases.put(normalizedTeamName, basePos);
         startBaseParticles(normalizedTeamName, basePos);
     }
 
@@ -141,8 +190,6 @@ public class CaptureTheFlagManager {
         String normalizedTeamName = teamName.substring(0, 1).toUpperCase() + teamName.substring(1).toLowerCase();
         
         BlockPos base = flagBases.get(normalizedTeamName);
-        System.out.println("CTF DEBUG: Getting base for team '" + teamName + "' (normalized: '" + normalizedTeamName + "') -> " + base);
-        System.out.println("CTF DEBUG: Available bases: " + flagBases.keySet());
         return base;
     }
     
@@ -153,8 +200,8 @@ public class CaptureTheFlagManager {
         // Get particle color based on team
         DustParticleEffect particleEffect = getTeamParticleEffect(teamName);
         
-        // Schedule repeating particle effects
-        particleScheduler.scheduleAtFixedRate(() -> {
+        // Schedule repeating particle effects and store the task
+        ScheduledFuture<?> particleTask = particleScheduler.scheduleAtFixedRate(() -> {
             try {
                 // Get the world from a player in the battle (fallback to overworld)
                 ServerWorld world = battle.getServer().getOverworld();
@@ -168,9 +215,9 @@ public class CaptureTheFlagManager {
                     }
                 }
                 
-                // Create a 3x3 area of particles around the base
-                for (int x = -1; x <= 1; x++) {
-                    for (int z = -1; z <= 1; z++) {
+                // Create a 4x4 area of particles around the base
+                for (int x = -2; x <= 1; x++) {
+                    for (int z = -2; z <= 1; z++) {
                         double particleX = basePos.getX() + x + 0.5;
                         double particleY = basePos.getY() + 1.0;
                         double particleZ = basePos.getZ() + z + 0.5;
@@ -188,6 +235,19 @@ public class CaptureTheFlagManager {
                 // Silently ignore errors (battle might have ended)
             }
         }, 0, 1, TimeUnit.SECONDS); // Repeat every second
+        
+        // Store the task so we can cancel it later
+        particleTasks.put(teamName, particleTask);
+    }
+    
+    /**
+     * Stop particle effects for a specific team
+     */
+    private void stopBaseParticles(String teamName) {
+        ScheduledFuture<?> task = particleTasks.remove(teamName);
+        if (task != null && !task.isCancelled()) {
+            task.cancel(false);
+        }
     }
     
     /**
@@ -367,11 +427,18 @@ public class CaptureTheFlagManager {
     
     /**
      * Get winning team (null if no winner yet)
-     * In timer-based CTF, there's no score limit - winner is determined when timer expires
+     * Behavior depends on CTF mode: score-based checks target score, time-based waits for timer
      */
     public String getWinningTeam() {
-        // No automatic win condition based on score
-        // Winner is determined by timer expiration in endRoundByTimer()
+        if (ctfMode == CTFMode.SCORE) {
+            // Score-based mode: check if any team reached target score
+            for (Map.Entry<String, Integer> entry : teamScores.entrySet()) {
+                if (entry.getValue() >= targetScore) {
+                    return entry.getKey(); // This team wins
+                }
+            }
+        }
+        // Time-based mode or no team reached target yet
         return null;
     }
     
@@ -391,6 +458,12 @@ public class CaptureTheFlagManager {
         // Clear flag carrier effects
         clearAllFlagCarrierEffects();
         
+        // Clear respawn delays and restore players from spectator mode
+        clearAllRespawnDelays();
+        
+        // Restart particle effects for all existing bases
+        restartAllBaseParticles();
+        
         // Don't reset scores - they persist across rounds
         
         // Start new round timer when battle is active
@@ -409,6 +482,9 @@ public class CaptureTheFlagManager {
         // Clear all flag carrier effects
         clearAllFlagCarrierEffects();
         
+        // Clear respawn delays and restore players from spectator mode
+        clearAllRespawnDelays();
+        
         // DON'T clear flagBases - they should persist with particles
         // flagBases.clear(); // REMOVED: bases should persist
         flagCarriers.clear();
@@ -418,9 +494,40 @@ public class CaptureTheFlagManager {
     }
     
     /**
+     * Reset CTF state but preserve bases and their particles (for battle series end)
+     */
+    public void resetButKeepBases() {
+        // Clear all flag carrier effects
+        clearAllFlagCarrierEffects();
+        
+        // Clear respawn delays and restore players from spectator mode
+        clearAllRespawnDelays();
+        
+        // DON'T stop particles or clear bases - they should persist
+        flagCarriers.clear();
+        flagsAtBase.clear();
+        teamFlags.clear();
+        teamScores.clear();
+        
+        // Return all flags to their bases
+        for (String team : flagBases.keySet()) {
+            flagsAtBase.put(team, true);
+        }
+    }
+    
+    /**
      * Stop all particle effects
      */
     public void stopAllParticles() {
+        // Cancel all individual particle tasks
+        for (ScheduledFuture<?> task : particleTasks.values()) {
+            if (task != null && !task.isCancelled()) {
+                task.cancel(false);
+            }
+        }
+        particleTasks.clear();
+        
+        // Shutdown and recreate the scheduler
         if (particleScheduler != null && !particleScheduler.isShutdown()) {
             particleScheduler.shutdownNow();
             particleScheduler = Executors.newScheduledThreadPool(1);
@@ -438,6 +545,23 @@ public class CaptureTheFlagManager {
                 stopFlagCarrierEffects(player);
             }
         }
+    }
+    
+    /**
+     * Clear all respawn delays and restore players from spectator mode
+     */
+    private void clearAllRespawnDelays() {
+        // Restore all players from spectator mode
+        for (UUID playerId : new HashSet<>(playersInSpectatorMode)) {
+            ServerPlayerEntity player = battle.getServer().getPlayerManager().getPlayer(playerId);
+            if (player != null && player.isSpectator()) {
+                player.changeGameMode(GameMode.SURVIVAL);
+            }
+        }
+        
+        // Clear tracking data
+        respawnDelayTasks.clear();
+        playersInSpectatorMode.clear();
     }
     
     /**
@@ -485,43 +609,17 @@ public class CaptureTheFlagManager {
         String playerTeamName = playerTeam.getName();
         BlockPos playerPos = player.getBlockPos();
         
-        // Debug: Show basic info every 20 ticks (1 second) to reduce spam
-        if (player.age % 20 == 0) {
-            player.sendMessage(
-                Text.literal("CTF: " + playerTeamName + " at " + playerPos.getX() + "," + playerPos.getY() + "," + playerPos.getZ())
-                    .formatted(Formatting.DARK_GRAY),
-                true // Action bar
-            );
-        }
-        
         // Check for automatic flag capture at own base
         if (isPlayerCarryingFlag(playerId)) {
             BlockPos ownBase = flagBases.get(playerTeamName);
             if (ownBase != null) {
                 double distance = Math.sqrt(playerPos.getSquaredDistance(ownBase));
                 
-                // Debug: Show distance to own base when carrying flag
-                if (player.age % 10 == 0) { // More frequent when important
-                    player.sendMessage(
-                        Text.literal("Distance to " + playerTeamName + " base: " + String.format("%.1f", distance) + " (need ≤5.0)")
-                            .formatted(Formatting.YELLOW),
-                        true // Action bar
-                    );
-                }
                 
                 if (distance <= 5.0) {
                     if (tryAutoCapture(player)) {
                         return; // Successfully captured, no need to check pickup
                     }
-                }
-            } else {
-                // Debug: Show if own base is missing
-                if (player.age % 20 == 0) {
-                    player.sendMessage(
-                        Text.literal("Warning: " + playerTeamName + " base not found!")
-                            .formatted(Formatting.RED),
-                        true
-                    );
                 }
             }
         }
@@ -533,47 +631,13 @@ public class CaptureTheFlagManager {
                 if (enemyBase != null) {
                     double distance = Math.sqrt(playerPos.getSquaredDistance(enemyBase));
                     
-                    // Debug: Show when near enemy base
-                    if (distance <= 8.0 && player.age % 10 == 0) {
-                        boolean flagAtBase = flagsAtBase.getOrDefault(teamName, true);
-                        boolean canPickup = !isPlayerCarryingFlag(playerId);
-                        
-                        player.sendMessage(
-                            Text.literal("Near " + teamName + " base: " + String.format("%.1f", distance) + 
-                                " | Flag at base: " + flagAtBase + " | Can pickup: " + canPickup)
-                                .formatted(distance <= 5.0 ? Formatting.GREEN : Formatting.YELLOW),
-                            true // Action bar
-                        );
-                    }
-                    
                     if (distance <= 5.0) {
                         if (tryAutoPickup(player, teamName)) {
                             break; // Only try one pickup per tick
                         }
                     }
-                } else {
-                    // Debug: Show if enemy base is missing
-                    if (player.age % 40 == 0) {
-                        player.sendMessage(
-                            Text.literal("Warning: " + teamName + " base not found!")
-                                .formatted(Formatting.RED),
-                            true
-                        );
-                    }
                 }
             }
-        }
-        
-        // Debug: Show all team bases occasionally
-        if (player.age % 100 == 0) { // Every 5 seconds
-            StringBuilder bases = new StringBuilder("Bases: ");
-            for (Map.Entry<String, BlockPos> entry : flagBases.entrySet()) {
-                bases.append(entry.getKey()).append("=").append(entry.getValue()).append(" ");
-            }
-            player.sendMessage(
-                Text.literal(bases.toString()).formatted(Formatting.GRAY),
-                false // Chat
-            );
         }
     }
     
@@ -693,7 +757,25 @@ public class CaptureTheFlagManager {
         // Update scoreboard for all players
         updateScoreboardForAllPlayers();
         
-        // No win condition - game continues until timer expires
+        // Check for immediate win in score-based mode
+        if (ctfMode == CTFMode.SCORE && newScore >= targetScore) {
+            // This team reached the target score - they win!
+            BattleTeam team = battle.getTeam(playerTeamName);
+            if (team != null) {
+                battle.broadcastToGamePlayers(
+                    Text.literal("🏆 ")
+                        .append(Text.literal(team.getDisplayName()).formatted(team.getFormatting()))
+                        .append(Text.literal(" wins by reaching " + targetScore + " points!"))
+                        .formatted(Formatting.GOLD, Formatting.BOLD)
+                );
+                
+                // End the game immediately
+                battle.endGame(team);
+                return true; // Game ended
+            }
+        }
+        
+        // Game continues (time-based mode or target not reached yet)
         return false;
     }
       /**
@@ -846,259 +928,373 @@ public class CaptureTheFlagManager {
     public void handlePlayerElimination(UUID playerId) {
         ServerPlayerEntity player = battle.getServer().getPlayerManager().getPlayer(playerId);
         if (player != null) {
-            handlePlayerLeave(player);
+            // Use handlePlayerDeath to trigger the 10-second respawn delay
+            handlePlayerDeath(player);
         }
     }
     
     /**
-     * Update scoreboard for all players with CTF scores
+     * Handle player death and start respawn delay
      */
-    private void updateScoreboardForAllPlayers() {
-        if (battle == null) return;
+    public void handlePlayerDeath(ServerPlayerEntity player) {
+        UUID playerId = player.getUuid();
+        BattleTeam playerTeam = battle.getPlayerTeam(playerId);
         
-        // Create a simple score display message
-        StringBuilder scoreMessage = new StringBuilder();
-        scoreMessage.append("CTF Scores: ");
+        if (playerTeam == null) return;
         
-        boolean first = true;
-        for (Map.Entry<String, Integer> entry : teamScores.entrySet()) {
-            if (!first) scoreMessage.append(" | ");
-            
-            String teamName = entry.getKey();
-            int score = entry.getValue();
-            
-            // Get team formatting
-            BattleTeam team = battle.getTeam(teamName);
-            if (team != null) {
-                scoreMessage.append(teamName).append(": ").append(score);
-            }
-            first = false;
-        }
+        // Drop any carried flag
+        handlePlayerLeave(player);
         
-        // Send to all game players as action bar
-        Text scoreText = Text.literal(scoreMessage.toString()).formatted(Formatting.GOLD);
-        for (UUID playerId : battle.getGamePlayers()) {
-            ServerPlayerEntity player = battle.getServer().getPlayerManager().getPlayer(playerId);
-            if (player != null) {
-                player.sendMessage(scoreText, true); // Action bar
-            }
-        }
-    }
-    
-    /**
-     * Clean up all CTF resources
-     */
-    public void cleanup() {
-        // Stop round timer
-        stopRoundTimer();
+        // Put player in spectator mode
+        player.changeGameMode(GameMode.SPECTATOR);
+        playersInSpectatorMode.add(playerId);
         
-        // Stop all particle effects
-        if (particleScheduler != null && !particleScheduler.isShutdown()) {
-            particleScheduler.shutdown();
-            try {
-                if (!particleScheduler.awaitTermination(1, TimeUnit.SECONDS)) {
-                    particleScheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                particleScheduler.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
-        }
+        // Start respawn delay
+        long respawnTime = System.currentTimeMillis() + (respawnDelaySeconds * 1000L);
+        respawnDelayTasks.put(playerId, respawnTime);
         
-        // Stop timer scheduler
-        if (timerScheduler != null && !timerScheduler.isShutdown()) {
-            timerScheduler.shutdown();
-            try {
-                if (!timerScheduler.awaitTermination(1, TimeUnit.SECONDS)) {
-                    timerScheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                timerScheduler.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
-        }
-        
-        // Stop all flag carrier effects
-        clearAllFlagCarrierEffects();
-        
-        // Clear all data
-        flagBases.clear();
-        flagCarriers.clear();
-        flagsAtBase.clear();
-        teamFlags.clear();
-        teamScores.clear();
-        carrierEffectTasks.clear();
-    }
-    
-    /**
-     * Start the CTF round timer
-     */
-    public void startRoundTimer() {
-        if (roundTimerActive) return;
-        
-        roundTimerActive = true;
-        int totalSeconds = roundTimeMinutes * 60;
-        
-        // Show timer warnings at specific intervals
-        int[] warningTimes = {600, 300, 120, 60, 30, 10, 5, 4, 3, 2, 1}; // 10min, 5min, 2min, 1min, 30s, 10s, 5-1s
-        
-        for (int warningTime : warningTimes) {
-            if (warningTime < totalSeconds) {
-                timerScheduler.schedule(() -> {
-                    if (!roundTimerActive) return;
-                    
-                    String timeMessage;
-                    if (warningTime >= 60) {
-                        int minutes = warningTime / 60;
-                        timeMessage = minutes + " minute" + (minutes > 1 ? "s" : "") + " remaining";
-                    } else {
-                        timeMessage = warningTime + " second" + (warningTime > 1 ? "s" : "") + " remaining";
-                    }
-                    
-                    battle.broadcastToGamePlayers(
-                        Text.literal("⏰ CTF Timer: " + timeMessage + "!")
-                            .formatted(warningTime <= 30 ? Formatting.RED : Formatting.YELLOW)
-                    );
-                }, (totalSeconds - warningTime) * 1000L, TimeUnit.MILLISECONDS);
-            }
-        }
-        
-        // End the round when timer expires
+        // Schedule respawn
         timerScheduler.schedule(() -> {
-            if (!roundTimerActive) return;
-            endRoundByTimer();
-        }, totalSeconds * 1000L, TimeUnit.MILLISECONDS);
+            respawnPlayer(playerId);
+        }, respawnDelaySeconds, TimeUnit.SECONDS);
         
-        // Start the timer display
+        // Show respawn timer to player
+        showRespawnTimer(player);
+        
+        // Announce death
         battle.broadcastToGamePlayers(
-            Text.literal("⏰ CTF Round started! " + roundTimeMinutes + " minutes to capture flags!")
-                .formatted(Formatting.GREEN, Formatting.BOLD)
+            Text.literal(player.getName().getString() + " was eliminated! Respawning in " + respawnDelaySeconds + " seconds...")
+                .formatted(Formatting.GRAY)
         );
     }
     
     /**
-     * Stop the CTF round timer
+     * Respawn a player at their team base
      */
-    public void stopRoundTimer() {
-        roundTimerActive = false;
-    }
-    
-    /**
-     * End the round due to timer expiration
-     */
-    private void endRoundByTimer() {
-        if (!roundTimerActive) return;
+    private void respawnPlayer(UUID playerId) {
+        respawnDelayTasks.remove(playerId);
+        playersInSpectatorMode.remove(playerId);
         
-        roundTimerActive = false;
+        ServerPlayerEntity player = battle.getServer().getPlayerManager().getPlayer(playerId);
+        if (player == null) return;
         
-        // Determine winner by score
-        String winningTeam = null;
-        int highestScore = -1;
-        boolean tie = false;
+        BattleTeam playerTeam = battle.getPlayerTeam(playerId);
+        if (playerTeam == null) return;
         
-        for (Map.Entry<String, Integer> entry : teamScores.entrySet()) {
-            int score = entry.getValue();
-            if (score > highestScore) {
-                highestScore = score;
-                winningTeam = entry.getKey();
-                tie = false;
-            } else if (score == highestScore && highestScore > 0) {
-                tie = true;
+        // Get team base
+        BlockPos teamBase = getTeamBase(playerTeam.getName());
+        if (teamBase == null) {
+            // Fallback to game spawn if no base set
+            BlockPos gameSpawn = battle.getGameSpawnPoint();
+            if (gameSpawn != null) {
+                teamBase = gameSpawn;
+            } else {
+                return; // No spawn point available
             }
         }
         
-        // Announce the result
-        if (tie || winningTeam == null || highestScore == 0) {
-            battle.broadcastToGamePlayers(
-                Text.literal("⏰ Time's up! The round ended in a draw.").formatted(Formatting.GRAY)
-            );
-            // For draws, continue to next round or end battle depending on settings
-            battle.handlePlayerElimination(); // This will check for game end conditions
-        } else {
-            BattleTeam team = battle.getTeam(winningTeam);
-            if (team != null) {
-                battle.broadcastToGamePlayers(
-                    Text.literal("⏰ Time's up! ")
-                        .append(Text.literal(team.getDisplayName()).formatted(team.getFormatting()))
-                        .append(Text.literal(" wins with " + highestScore + " captures!"))
-                        .formatted(Formatting.GOLD, Formatting.BOLD)
-                );
+        // Change back to survival mode
+        player.changeGameMode(GameMode.SURVIVAL);
+        
+        // Teleport to team base
+        ServerWorld world = player.getServerWorld();
+        player.teleport(world, teamBase.getX() + 0.5, teamBase.getY() + 1.0, 
+            teamBase.getZ() + 0.5, player.getYaw(), player.getPitch());
+        
+        // Clear effects and heal player
+        player.clearStatusEffects();
+        player.setHealth(player.getMaxHealth());
+        player.getHungerManager().setFoodLevel(20);
+        player.getHungerManager().setSaturationLevel(20.0f);
+        
+        // Announce respawn
+        player.sendMessage(
+            Text.literal("You have respawned at your team base!")
+                .formatted(Formatting.GREEN, Formatting.BOLD),
+            true // Action bar
+        );
+    }
+    
+    /**
+     * Show respawn timer to player
+     */
+    private void showRespawnTimer(ServerPlayerEntity player) {
+        UUID playerId = player.getUuid();
+        
+        // Schedule timer updates every second
+        for (int i = 1; i <= respawnDelaySeconds; i++) {
+            final int secondsLeft = respawnDelaySeconds - i + 1;
+            timerScheduler.schedule(() -> {
+                // Check if player is still waiting to respawn
+                if (respawnDelayTasks.containsKey(playerId)) {
+                    player.sendMessage(
+                        Text.literal("Respawning in " + secondsLeft + " second" + (secondsLeft != 1 ? "s" : "") + "...")
+                            .formatted(Formatting.YELLOW, Formatting.BOLD),
+                        true // Action bar
+                    );
+                }
+            }, i, TimeUnit.SECONDS);
+        }
+    }
+    
+    /**
+     * Check if a player is in respawn delay
+     */
+    public boolean isPlayerInRespawnDelay(UUID playerId) {
+        return respawnDelayTasks.containsKey(playerId);
+    }
+    
+    /**
+     * Get remaining respawn time for a player in seconds
+     */
+    public int getRemainingRespawnTime(UUID playerId) {
+        Long respawnTime = respawnDelayTasks.get(playerId);
+        if (respawnTime != null) {
+            long remainingMillis = respawnTime - System.currentTimeMillis();
+            return (int) Math.ceil(remainingMillis / 1000.0);
+        }
+        return 0;
+    }
+    
+    /**
+     * Start the round timer
+     */
+    public void startRoundTimer() {
+        if (roundTimerActive) return;
+        roundTimerActive = true;
+        
+        // Broadcast starting message
+        battle.broadcastToGamePlayers(
+            Text.literal("CTF Round starting! Flags will be dropped in " + roundTimeMinutes + " minutes.")
+                .formatted(Formatting.GOLD, Formatting.BOLD)
+        );
+        
+        // Schedule flag drop
+        timerScheduler.schedule(() -> {
+            dropFlags();
+        }, roundTimeMinutes, TimeUnit.MINUTES);
+    }
+    
+    /**
+     * Stop the round timer
+     */
+    private void stopRoundTimer() {
+        roundTimerActive = false;
+        
+        // Cancel all scheduled tasks for the timer
+        timerScheduler.shutdownNow();
+        timerScheduler = Executors.newScheduledThreadPool(1);
+    }
+    
+    /**
+     * Drop flags at the start of the round
+     */
+    private void dropFlags() {
+        // Drop flags at each base location
+        for (Map.Entry<String, BlockPos> entry : flagBases.entrySet()) {
+            String team = entry.getKey();
+            BlockPos basePos = entry.getValue();
+            
+            // Only drop flags for teams that are part of the battle
+            if (teamScores.containsKey(team)) {
+                flagsAtBase.put(team, false); // Flag is no longer at base
                 
-                // End the game or advance to next round
-                if (battle.getCurrentRound() >= battle.getTotalRounds()) {
-                    // End the entire battle
-                    battle.endGame(team);
-                } else {
-                    // Start next round
-                    battle.nextRound();
+                // Play particle effect at the base location
+                ServerWorld world = battle.getServer().getOverworld();
+                DustParticleEffect particleEffect = getTeamParticleEffect(team);
+                for (int i = 0; i < 10; i++) {
+                    double x = basePos.getX() + Math.random();
+                    double y = basePos.getY() + 1.0;
+                    double z = basePos.getZ() + Math.random();
+                    world.spawnParticles(particleEffect, x, y, z, 1, 0.0, 0.0, 0.0, 0);
                 }
             }
         }
+        
+        // Announce flag drop
+        battle.broadcastToGamePlayers(
+            Text.literal("CTF Flags have been dropped!")
+                .formatted(Formatting.GOLD, Formatting.BOLD)
+        );
     }
     
     /**
-     * Add colored glowing effect by temporarily placing player in a flag-colored team
+     * Update the scoreboard for all players
      */
-    private void addColoredGlowing(ServerPlayerEntity player, String flagTeam) {
-        if (battle.getServer() == null) return;
-        
-        String tempTeamName = "ctf_flag_" + flagTeam.toLowerCase();
-        Scoreboard scoreboard = battle.getServer().getScoreboard();
-        
-        // Create temporary team for flag color if it doesn't exist
-        Team scoreboardTeam = scoreboard.getTeam(tempTeamName);
-        if (scoreboardTeam == null) {
-            scoreboardTeam = scoreboard.addTeam(tempTeamName);
-            
-            // Set team color based on flag
-            switch (flagTeam.toLowerCase()) {
-                case "red":
-                    scoreboardTeam.setColor(Formatting.RED);
-                    break;
-                case "blue":
-                    scoreboardTeam.setColor(Formatting.BLUE);
-                    break;
-                default:
-                    scoreboardTeam.setColor(Formatting.WHITE);
+    private void updateScoreboardForAllPlayers() {
+        for (UUID playerId : battle.getGamePlayers()) {
+            ServerPlayerEntity player = battle.getServer().getPlayerManager().getPlayer(playerId);
+            if (player != null) {
+                updateScoreboardForPlayer(player);
             }
-            
-            // Enable glowing for this team
-            scoreboardTeam.setCollisionRule(AbstractTeam.CollisionRule.NEVER);
-            scoreboardTeam.setShowFriendlyInvisibles(true);
+        }
+    }
+    
+    /**
+     * Update the scoreboard for a specific player
+     */
+    private void updateScoreboardForPlayer(ServerPlayerEntity player) {
+        // Alternative implementation without scoreboard tags - use action bar instead
+        StringBuilder scoreText = new StringBuilder("Scores: ");
+        for (Map.Entry<String, Integer> entry : teamScores.entrySet()) {
+            String team = entry.getKey();
+            int score = entry.getValue();
+            scoreText.append(team).append(": ").append(score).append(" ");
         }
         
-        // Add player to flag-colored team (this provides colored glowing)
-        scoreboard.addPlayerToTeam(player.getEntityName(), scoreboardTeam);
-        
-        // Apply vanilla glowing effect
-        player.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 999999, 0, false, false, true));
+        // Send score as action bar message
+        player.sendMessage(Text.literal(scoreText.toString().trim())
+            .formatted(Formatting.AQUA), true);
     }
     
     /**
-     * Remove colored glowing effect by restoring player to their original battle team
+     * Set the CTF game mode
      */
+    public void setCTFMode(CTFMode mode) {
+        this.ctfMode = mode;
+    }
+    
+    /**
+     * Set the target score for score-based mode
+     */
+    public void setTargetScore(int score) {
+        this.targetScore = score;
+    }
+    
+    /**
+     * Get the current CTF mode
+     */
+    public CTFMode getCTFMode() {
+        return ctfMode;
+    }
+    
+    /**
+     * Get the target score for score-based mode
+     */
+    public int getTargetScore() {
+        return targetScore;
+    }
+    
+    /**
+     * Cleanup respawn delays and spectator states
+     */
+    public void cleanup() {
+        respawnDelayTasks.clear();
+        for (UUID playerId : new HashSet<>(respawnDelayTasks.keySet())) {
+            ServerPlayerEntity player = battle.getServer().getPlayerManager().getPlayer(playerId);
+            if (player != null) {
+                player.changeGameMode(GameMode.SURVIVAL);
+            }
+        }
+    }
+    
+    /**
+     * Complete shutdown - clear everything including bases and particles (for battle shutdown)
+     */
+    public void shutdownAndClearAll() {
+        // Stop all particle effects
+        stopAllParticles();
+        
+        // Clear all flag carrier effects
+        clearAllFlagCarrierEffects();
+        
+        // Clear respawn delays and restore players from spectator mode
+        clearAllRespawnDelays();
+        
+        // Clear EVERYTHING including bases (this is a full shutdown)
+        flagBases.clear(); // This time we DO clear bases since battle is shutting down
+        flagCarriers.clear();
+        flagsAtBase.clear();
+        teamFlags.clear();
+        teamScores.clear();
+        
+        // Stop timers
+        if (timerScheduler != null && !timerScheduler.isShutdown()) {
+            timerScheduler.shutdownNow();
+        }
+        
+        // Stop particle scheduler
+        if (particleScheduler != null && !particleScheduler.isShutdown()) {
+            particleScheduler.shutdownNow();
+        }
+    }
+    
+    /**
+     * Get flag bases for persistence
+     */
+    public Map<String, BlockPos> getFlagBases() {
+        return new HashMap<>(flagBases);
+    }
+    
+    /**
+     * Restart particle effects for all existing bases
+     */
+    private void restartAllBaseParticles() {
+        // Stop any existing particle tasks first
+        for (ScheduledFuture<?> task : particleTasks.values()) {
+            if (task != null && !task.isCancelled()) {
+                task.cancel(false);
+            }
+        }
+        particleTasks.clear();
+        
+        // Restart particles for all current bases
+        for (Map.Entry<String, BlockPos> entry : flagBases.entrySet()) {
+            String teamName = entry.getKey();
+            BlockPos basePos = entry.getValue();
+            startBaseParticles(teamName, basePos);
+        }
+    }
+    
+    /**
+     * Ensure all base particles are active (public method for Battle to call)
+     */
+    public void ensureBaseParticlesActive() {
+        restartAllBaseParticles();
+    }
+    
+    // Methods for colored glow effects using scoreboard teams and glowing effect
+    private void addColoredGlowing(ServerPlayerEntity player, String team) {
+        // Add vanilla glowing effect
+        player.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, Integer.MAX_VALUE, 0, false, false));
+        
+        // Add player to temporary colored team for glow color
+        Scoreboard scoreboard = player.getServer().getScoreboard();
+        String glowTeamName = "ctf_glow_" + team.toLowerCase();
+        
+        Team glowTeam = scoreboard.getTeam(glowTeamName);
+        if (glowTeam == null) {
+            glowTeam = scoreboard.addTeam(glowTeamName);
+            // Set team color based on flag team
+            if ("red".equalsIgnoreCase(team)) {
+                glowTeam.setColor(Formatting.RED);
+            } else if ("blue".equalsIgnoreCase(team)) {
+                glowTeam.setColor(Formatting.BLUE);
+            } else {
+                glowTeam.setColor(Formatting.YELLOW); // Default color for other teams
+            }
+            glowTeam.setShowFriendlyInvisibles(false);
+            glowTeam.setCollisionRule(AbstractTeam.CollisionRule.NEVER);
+        }
+        
+        // Add player to the glow team
+        scoreboard.addPlayerToTeam(player.getEntityName(), glowTeam);
+    }
+
     private void removeColoredGlowing(ServerPlayerEntity player) {
-        if (battle.getServer() == null) return;
+        // Remove glowing effect
+        player.removeStatusEffect(StatusEffects.GLOWING);
         
-        Scoreboard scoreboard = battle.getServer().getScoreboard();
+        // Remove player from glow teams
+        Scoreboard scoreboard = player.getServer().getScoreboard();
         
-        // Remove player from any temporary flag team
+        // Remove from any CTF glow teams
         Team currentTeam = scoreboard.getPlayerTeam(player.getEntityName());
-        if (currentTeam != null && currentTeam.getName().startsWith("ctf_flag_")) {
+        if (currentTeam != null && currentTeam.getName().startsWith("ctf_glow_")) {
             scoreboard.removePlayerFromTeam(player.getEntityName(), currentTeam);
         }
         
-        // Restore player to their original battle team
-        BattleTeam playerTeam = battle.getPlayerTeam(player.getUuid());
-        if (playerTeam != null) {
-            String teamName = "battle_" + playerTeam.getName().toLowerCase();
-            Team battleTeam = scoreboard.getTeam(teamName);
-            if (battleTeam != null) {
-                scoreboard.addPlayerToTeam(player.getEntityName(), battleTeam);
-            }
-        }
-        
-        // Remove glowing effect
-        player.removeStatusEffect(StatusEffects.GLOWING);
+        // Note: Original team restoration would need to be handled by the main battle system
+        // when the CTF game ends, as we don't have direct access to Battle instance here
     }
 }

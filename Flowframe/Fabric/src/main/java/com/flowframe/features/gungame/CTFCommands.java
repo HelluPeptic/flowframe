@@ -45,34 +45,45 @@ public class CTFCommands {
                 return 0;
             }
             
-            if (!battle.isBattleLeader(player.getUuid()) && !hasLuckPermsPermission(source, "flowframe.command.battle.ctf")) {
-                source.sendError(Text.literal("Only the battle leader can set flag bases."));
-                return 0;
-            }
-            
             BattleTeam playerTeam = battle.getPlayerTeam(player.getUuid());
             if (playerTeam == null) {
                 source.sendError(Text.literal("You must be on a team to set a base."));
                 return 0;
             }
             
+            // Check if player is team leader
+            if (!playerTeam.isTeamLeader(player.getUuid())) {
+                source.sendError(Text.literal("Only the team leader can set the flag base."));
+                return 0;
+            }
+            
             BlockPos basePos = player.getBlockPos();
             CaptureTheFlagManager ctf = battle.getCTFManager();
             if (ctf != null) {
-                // Debug: Show exactly what we're setting
-                source.sendFeedback(() -> Text.literal("DEBUG: Setting base for team '" + playerTeam.getName() + "' at position " + basePos)
-                    .formatted(Formatting.YELLOW), false);
+                // Check if base already exists
+                BlockPos existingBase = ctf.getTeamBase(playerTeam.getName());
+                boolean isReplacing = existingBase != null;
                 
-                ctf.setFlagBase(playerTeam.getName(), basePos);
+                // Try to set the base
+                boolean success = ctf.setFlagBase(playerTeam.getName(), basePos, player.getUuid());
                 
-                // Verify the base was set correctly
-                BlockPos retrievedBase = ctf.getTeamBase(playerTeam.getName());
-                source.sendFeedback(() -> Text.literal("DEBUG: Retrieved base for team '" + playerTeam.getName() + "' is " + retrievedBase)
-                    .formatted(Formatting.YELLOW), false);
-                
-                source.sendFeedback(() -> Text.literal("Set " + playerTeam.getDisplayName() + " team flag base at " + basePos)
-                    .formatted(Formatting.GREEN), false);
-                return 1;
+                if (success) {
+                    if (isReplacing) {
+                        source.sendFeedback(() -> Text.literal("Updated " + playerTeam.getDisplayName() + " team flag base to " + basePos.getX() + ", " + basePos.getY() + ", " + basePos.getZ())
+                            .formatted(Formatting.GREEN), false);
+                    } else {
+                        source.sendFeedback(() -> Text.literal("Set " + playerTeam.getDisplayName() + " team flag base at " + basePos.getX() + ", " + basePos.getY() + ", " + basePos.getZ())
+                            .formatted(Formatting.GREEN), false);
+                    }
+                    return 1;
+                } else {
+                    if (battle.getState() == Battle.BattleState.ACTIVE) {
+                        source.sendError(Text.literal("Cannot move flag base during an active game!"));
+                    } else {
+                        source.sendError(Text.literal("Failed to set flag base."));
+                    }
+                    return 0;
+                }
             }
             
             source.sendError(Text.literal("CTF manager not initialized."));
