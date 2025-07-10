@@ -221,6 +221,12 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
   - **Flag Requirements:** Your own flag must be at base to capture enemy flags (strategic defense element)
   - **Real-time Feedback:** Action bar messages, sound effects, and score updates for all major events
 
+### 27. Daily Restart Warning
+
+- **Description:** Automatically sends a red warning message to all players every day at 6:55 AM Central European Time, notifying them that the server will restart in 5 minutes. This helps players prepare for scheduled daily restarts.
+- **Commands:** None
+- **Permissions:** None (automatic)
+
 ---
 
 ## Permissions

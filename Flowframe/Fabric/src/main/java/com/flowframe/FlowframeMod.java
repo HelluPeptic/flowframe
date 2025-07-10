@@ -36,6 +36,7 @@ import com.flowframe.features.countentities.CountEntitiesCommand;
 import com.flowframe.features.gamerules.GameRulesFeature;
 import com.flowframe.features.gungame.BattleFeature;
 import com.flowframe.features.gamemode.GameModeCommands;
+import com.flowframe.features.restartwarning.RestartWarningFeature;
 
 public class FlowframeMod implements ModInitializer {
     @Override
@@ -60,6 +61,7 @@ public class FlowframeMod implements ModInitializer {
         GameRulesFeature.register();
         BattleFeature.register();
         GameModeCommands.register();
+        RestartWarningFeature.register();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }
