@@ -213,20 +213,23 @@ public class Battle {
             return false; // Need at least 2 teams with players
         }
         
-        totalRounds = 1;
+        // For CTF mode, validate that both Red and Blue bases are set
+        // REMOVED: Skip validation - just let the game start and teleport to bases if available
+          totalRounds = 1;
         currentRound = 1;
         state = BattleState.COUNTDOWN;
         
         // Initialize CTF if needed
         if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
             ctfManager.initializeCTF(teams.keySet());
-            setupCTFBases(); // Add this line to set up team bases
+            // Note: Do not auto-setup bases here - let players set them manually with /flowframe battle ctf setbase
+            // setupCTFBases(); // REMOVED: This was overriding manually set bases
         }
         
         startCountdown();
         return true;
     }
-    
+
     public boolean startGameWithRounds(int rounds) {
         if ((state != BattleState.WAITING && state != BattleState.WAITING_NEXT_ROUND) || teams.size() < 2) {
             return false;
@@ -248,7 +251,8 @@ public class Battle {
         // Initialize CTF if needed
         if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
             ctfManager.initializeCTF(teams.keySet());
-            setupCTFBases(); // Add this line to set up team bases
+            // Note: Do not auto-setup bases here - let players set them manually with /flowframe battle ctf setbase
+            // setupCTFBases(); // REMOVED: This was overriding manually set bases
         }
         
         startCountdown();
@@ -288,16 +292,26 @@ public class Battle {
                 if (player != null) {
                     BattleTeam playerTeam = playerTeams.get(playerId);
                     if (playerTeam != null) {
+                        // Debug: Show what team name we're looking for
+                        System.out.println("CTF DEBUG: Looking for base for team '" + playerTeam.getName() + "'");
+                        System.out.println("CTF DEBUG: Player " + player.getName().getString() + " is on team '" + playerTeam.getName() + "'");
+                        
                         // Try to get the team's base position
                         BlockPos teamBase = ctfManager.getTeamBase(playerTeam.getName());
+                        System.out.println("CTF DEBUG: Retrieved base for '" + playerTeam.getName() + "' = " + teamBase);
+                        
                         ServerWorld world = player.getServerWorld();
                         
                         if (teamBase != null) {
                             // Teleport to team base
                             player.teleport(world, teamBase.getX() + 0.5, teamBase.getY() + 1.0, 
                                 teamBase.getZ() + 0.5, player.getYaw(), player.getPitch());
+                            
+                            // Success message for player
+                            player.sendMessage(Text.literal("Teleported to " + playerTeam.getName() + " base!")
+                                .formatted(Formatting.GREEN), false);
                         } else {
-                            // Fallback to game spawn point if base not set
+                            // Just teleport to spawn point without error message
                             player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
                                 gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
                         }
@@ -457,6 +471,11 @@ public class Battle {
             team.resetForNextRound();
         }
         spectators.clear();
+        
+        // Clear only flag carrier effects when battle series ends (keep bases)
+        if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
+            ctfManager.reset(); // This now preserves bases but clears effects
+        }
         
         // Update tablist
         TablistUtil.updateTablistDisplayNamesForAll(server);
@@ -945,6 +964,9 @@ public class Battle {
         if (state != BattleState.WAITING_NEXT_ROUND) {
             return false;
         }
+        
+        // For CTF mode, skip validation - just start the next round
+        // REMOVED: Base validation that was preventing rounds from starting
         
         startNextRound();
         return true;

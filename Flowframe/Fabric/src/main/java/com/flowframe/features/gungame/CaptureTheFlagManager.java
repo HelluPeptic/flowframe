@@ -20,6 +20,9 @@ import net.minecraft.network.packet.s2c.play.SubtitleS2CPacket;
 import net.minecraft.text.Style;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.scoreboard.Scoreboard;
+import net.minecraft.scoreboard.Team;
+import net.minecraft.scoreboard.AbstractTeam;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,7 +37,6 @@ public class CaptureTheFlagManager {
     private final Map<String, ItemStack> teamFlags = new ConcurrentHashMap<>();
     private final Map<String, Integer> teamScores = new ConcurrentHashMap<>();
     private final Map<UUID, String> carrierEffectTasks = new ConcurrentHashMap<>(); // Track effect tasks for each carrier
-    private final int scoreToWin = 3; // First team to capture 3 flags wins
     private final int roundTimeMinutes = 10; // CTF rounds last 10 minutes
     private ScheduledExecutorService particleScheduler;
     private ScheduledExecutorService timerScheduler;
@@ -55,20 +57,41 @@ public class CaptureTheFlagManager {
      * Initialize CTF for the given teams (only Red and Blue allowed)
      */
     public void initializeCTF(Collection<String> teamNames) {
-        flagBases.clear();
+        // DON'T clear flagBases - they should persist when manually set by players
+        // flagBases.clear(); // REMOVED: This was clearing manually set bases!
         flagCarriers.clear();
         flagsAtBase.clear();
         teamFlags.clear();
-        teamScores.clear();
+        // Initialize scores only if they don't exist yet
+        if (teamScores.isEmpty()) {
+            for (String teamName : teamNames) {
+                teamScores.put(teamName, 0);
+            }
+        }
         
-        // Only allow Red and Blue teams in CTF
-        List<String> validTeams = teamNames.stream()
-            .filter(allowedTeams::contains)
-            .collect(java.util.stream.Collectors.toList());
+        // Use existing teams that match allowed teams, ensuring consistent naming
+        List<String> validTeams = new ArrayList<>();
+        for (String teamName : teamNames) {
+            // Check if this team matches our allowed teams (case-insensitive)
+            for (String allowedTeam : allowedTeams) {
+                if (teamName.equalsIgnoreCase(allowedTeam)) {
+                    validTeams.add(teamName); // Use the actual team name from Battle
+                    break;
+                }
+            }
+        }
         
-        if (validTeams.size() != 2 || !validTeams.contains("Red") || !validTeams.contains("Blue")) {
-            // Force Red and Blue teams
-            validTeams = Arrays.asList("Red", "Blue");
+        // Ensure we have exactly Red and Blue teams
+        if (validTeams.size() != 2) {
+            // If teams don't exist properly, something is wrong with initialization
+            System.err.println("CTF Warning: Expected exactly 2 teams (Red/Blue), found: " + validTeams);
+            // Use the team names as they exist in Battle, not hardcoded values
+            validTeams.clear();
+            for (String teamName : teamNames) {
+                if (teamName.equalsIgnoreCase("red") || teamName.equalsIgnoreCase("blue")) {
+                    validTeams.add(teamName);
+                }
+            }
         }
         
         // Initialize each team
@@ -81,29 +104,46 @@ public class CaptureTheFlagManager {
             if (team != null) {
                 ItemStack flag = new ItemStack(Items.WHITE_BANNER);
                 
-                // Set custom name using NBT
+                // Set custom name for the flag
                 NbtCompound nbt = flag.getOrCreateNbt();
-                nbt.putString("display.Name", 
-                    Text.Serializer.toJson(Text.literal(teamName + " Flag").formatted(team.getFormatting())));
+                nbt.putString("display.Name", "{\"text\":\"" + teamName + " Flag\",\"color\":\"" + teamName.toLowerCase() + "\"}");
                 
                 teamFlags.put(teamName, flag);
             }
         }
     }
-    
-    /**
+      /**
      * Set flag base location for a team and start particle effects
      */
     public void setFlagBase(String teamName, BlockPos basePos) {
-        flagBases.put(teamName, basePos);
-        startBaseParticles(teamName, basePos);
+        // Normalize team name to match Battle's naming convention (capitalize first letter)
+        String normalizedTeamName = teamName.substring(0, 1).toUpperCase() + teamName.substring(1).toLowerCase();
+        
+        System.out.println("CTF DEBUG: Setting base for team '" + teamName + "' (normalized: '" + normalizedTeamName + "') at position " + basePos);
+        
+        // Store with normalized name
+        flagBases.put(normalizedTeamName, basePos);
+        
+        // Debug: Print all current bases
+        System.out.println("CTF DEBUG: All bases after setting:");
+        for (Map.Entry<String, BlockPos> entry : flagBases.entrySet()) {
+            System.out.println("  Team '" + entry.getKey() + "' -> " + entry.getValue());
+        }
+        
+        startBaseParticles(normalizedTeamName, basePos);
     }
-    
+
     /**
      * Get flag base location for a team
      */
     public BlockPos getTeamBase(String teamName) {
-        return flagBases.get(teamName);
+        // Normalize team name to match Battle's naming convention (capitalize first letter)
+        String normalizedTeamName = teamName.substring(0, 1).toUpperCase() + teamName.substring(1).toLowerCase();
+        
+        BlockPos base = flagBases.get(normalizedTeamName);
+        System.out.println("CTF DEBUG: Getting base for team '" + teamName + "' (normalized: '" + normalizedTeamName + "') -> " + base);
+        System.out.println("CTF DEBUG: Available bases: " + flagBases.keySet());
+        return base;
     }
     
     /**
@@ -211,11 +251,7 @@ public class CaptureTheFlagManager {
         flagCarriers.put(flagTeam, playerId);
         flagsAtBase.put(flagTeam, false);
         
-        // Give flag item to player
-        ItemStack flag = teamFlags.get(flagTeam);
-        if (flag != null) {
-            player.getInventory().insertStack(flag.copy());
-        }
+        // Don't give flag item to player - only glowing and text indicate flag possession
         
         // Announce flag pickup
         battle.broadcastToGamePlayers(
@@ -287,11 +323,7 @@ public class CaptureTheFlagManager {
         flagCarriers.remove(carriedFlag);
         flagsAtBase.put(carriedFlag, true);
         
-        // Remove flag from player's inventory
-        ItemStack flag = teamFlags.get(carriedFlag);
-        if (flag != null) {
-            player.getInventory().removeStack(player.getInventory().getSlotWithStack(flag));
-        }
+        // No need to remove flag from inventory since no banner item is given
         
         // Increase score
         int newScore = teamScores.get(playerTeamName) + 1;
@@ -303,12 +335,12 @@ public class CaptureTheFlagManager {
                 .append(Text.literal(playerTeamName).formatted(playerTeam.getFormatting()))
                 .append(Text.literal("] " + player.getName().getString() + " captured the "))
                 .append(Text.literal(carriedFlag + " flag!").formatted(battle.getTeam(carriedFlag).getFormatting()))
-                .append(Text.literal(" Score: " + newScore + "/" + scoreToWin))
+                .append(Text.literal(" Score: " + newScore))
                 .formatted(Formatting.GOLD)
         );
         
-        // Check for win condition
-        return newScore >= scoreToWin;
+        // No win condition - game continues until timer expires
+        return false;
     }
     
     /**
@@ -335,13 +367,11 @@ public class CaptureTheFlagManager {
     
     /**
      * Get winning team (null if no winner yet)
+     * In timer-based CTF, there's no score limit - winner is determined when timer expires
      */
     public String getWinningTeam() {
-        for (Map.Entry<String, Integer> entry : teamScores.entrySet()) {
-            if (entry.getValue() >= scoreToWin) {
-                return entry.getKey();
-            }
-        }
+        // No automatic win condition based on score
+        // Winner is determined by timer expiration in endRoundByTimer()
         return null;
     }
     
@@ -359,12 +389,7 @@ public class CaptureTheFlagManager {
         flagCarriers.clear();
         
         // Clear flag carrier effects
-        for (UUID playerId : new HashSet<>(carrierEffectTasks.keySet())) {
-            ServerPlayerEntity player = battle.getServer().getPlayerManager().getPlayer(playerId);
-            if (player != null) {
-                stopFlagCarrierEffects(player);
-            }
-        }
+        clearAllFlagCarrierEffects();
         
         // Don't reset scores - they persist across rounds
         
@@ -381,7 +406,11 @@ public class CaptureTheFlagManager {
         // Stop all particle effects
         stopAllParticles();
         
-        flagBases.clear();
+        // Clear all flag carrier effects
+        clearAllFlagCarrierEffects();
+        
+        // DON'T clear flagBases - they should persist with particles
+        // flagBases.clear(); // REMOVED: bases should persist
         flagCarriers.clear();
         flagsAtBase.clear();
         teamFlags.clear();
@@ -395,6 +424,19 @@ public class CaptureTheFlagManager {
         if (particleScheduler != null && !particleScheduler.isShutdown()) {
             particleScheduler.shutdownNow();
             particleScheduler = Executors.newScheduledThreadPool(1);
+        }
+    }
+    
+    /**
+     * Clear all flag carrier effects for all players
+     */
+    private void clearAllFlagCarrierEffects() {
+        // Clear flag carrier effects for all players
+        for (UUID playerId : new HashSet<>(carrierEffectTasks.keySet())) {
+            ServerPlayerEntity player = battle.getServer().getPlayerManager().getPlayer(playerId);
+            if (player != null) {
+                stopFlagCarrierEffects(player);
+            }
         }
     }
     
@@ -554,11 +596,7 @@ public class CaptureTheFlagManager {
         flagCarriers.put(flagTeam, playerId);
         flagsAtBase.put(flagTeam, false);
         
-        // Give flag item to player
-        ItemStack flag = teamFlags.get(flagTeam);
-        if (flag != null) {
-            player.getInventory().insertStack(flag.copy());
-        }
+        // Don't give flag item to player - only glowing and text indicate flag possession
         
         // Get player team for announcement
         BattleTeam playerTeam = battle.getPlayerTeam(playerId);
@@ -621,17 +659,8 @@ public class CaptureTheFlagManager {
         flagCarriers.remove(carriedFlag);
         flagsAtBase.put(carriedFlag, true);
         
-        // Remove flag from player's inventory
-        ItemStack flag = teamFlags.get(carriedFlag);
-        if (flag != null) {
-            for (int i = 0; i < player.getInventory().size(); i++) {
-                ItemStack stack = player.getInventory().getStack(i);
-                if (stack.getItem() == flag.getItem()) {
-                    player.getInventory().removeStack(i);
-                    break;
-                }
-            }
-        }
+        
+        // No need to remove flag from inventory since no banner item is given
         
         // Stop visual effects
         stopFlagCarrierEffects(player);
@@ -646,7 +675,7 @@ public class CaptureTheFlagManager {
                 .append(Text.literal(playerTeamName).formatted(playerTeam.getFormatting()))
                 .append(Text.literal("] " + player.getName().getString() + " captured the "))
                 .append(Text.literal(carriedFlag + " flag!").formatted(battle.getTeam(carriedFlag).getFormatting()))
-                .append(Text.literal(" Score: " + newScore + "/" + scoreToWin))
+                .append(Text.literal(" Score: " + newScore))
                 .formatted(Formatting.GOLD, Formatting.BOLD)
         );
         
@@ -664,15 +693,10 @@ public class CaptureTheFlagManager {
         // Update scoreboard for all players
         updateScoreboardForAllPlayers();
         
-        // Check for win condition
-        if (newScore >= scoreToWin) {
-            return true; // Team wins - this will be handled by the calling code
-        }
-        
-        return false; // Continue playing
+        // No win condition - game continues until timer expires
+        return false;
     }
-    
-    /**
+      /**
      * Start visual effects for flag carrier
      */
     private void startFlagCarrierEffects(ServerPlayerEntity player, String flagTeam) {
@@ -682,11 +706,12 @@ public class CaptureTheFlagManager {
         if (carrierEffectTasks.containsKey(playerId)) {
             stopFlagCarrierEffects(player);
         }
-        
+
         DustParticleEffect particleEffect = getTeamParticleEffect(flagTeam);
         
-        // Add persistent glowing status effect
-        player.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 999999, 0, false, false, true));
+        // Add glowing effect using a temporary scoreboard team with flag color
+        // This creates colored glowing based on the flag the player is carrying
+        addColoredGlowing(player, flagTeam);
         
         String taskId = "carrier_" + playerId.toString();
         particleScheduler.scheduleAtFixedRate(() -> {
@@ -697,21 +722,31 @@ public class CaptureTheFlagManager {
                     return;
                 }
                 
-                // Refresh glowing effect to prevent it from expiring
-                player.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 999999, 0, false, false, true));
+                // Refresh glowing effect to prevent it from expiring (only if still using vanilla glowing)
+                // With colored glowing via scoreboard teams, this is handled by the team membership
                 
                 ServerWorld world = player.getServerWorld();
                 Vec3d pos = player.getPos();
                 
-                // Create particle effects
-                for (int i = 0; i < 8; i++) {
-                    double offsetX = (Math.random() - 0.5) * 1.0;
-                    double offsetY = Math.random() * 1.5;
-                    double offsetZ = (Math.random() - 0.5) * 1.0;
+                // Create enhanced colored particle effects around the player to indicate flag color
+                for (int i = 0; i < 12; i++) { // More particles for better visibility
+                    double offsetX = (Math.random() - 0.5) * 1.5;
+                    double offsetY = Math.random() * 2.0;
+                    double offsetZ = (Math.random() - 0.5) * 1.5;
                     double x = pos.x + offsetX;
                     double y = pos.y + offsetY;
                     double z = pos.z + offsetZ;
                     world.spawnParticles(particleEffect, x, y, z, 1, 0.05, 0.05, 0.05, 0);
+                }
+                
+                // Create a ring of colored particles around the player for better visibility
+                double radius = 1.0;
+                for (int i = 0; i < 8; i++) {
+                    double angle = (i * Math.PI * 2) / 8;
+                    double x = pos.x + Math.cos(angle) * radius;
+                    double y = pos.y + 1.0;
+                    double z = pos.z + Math.sin(angle) * radius;
+                    world.spawnParticles(particleEffect, x, y, z, 1, 0.0, 0.0, 0.0, 0);
                 }
                 
                 // Show carrier status to other players
@@ -745,8 +780,9 @@ public class CaptureTheFlagManager {
     private void stopFlagCarrierEffects(ServerPlayerEntity player) {
         UUID playerId = player.getUuid();
         String taskId = carrierEffectTasks.remove(playerId);
-        // Remove glowing status effect
-        player.removeStatusEffect(StatusEffects.GLOWING);
+        
+        // Remove colored glowing effect by restoring original team assignment
+        removeColoredGlowing(player);
         
         if (taskId != null) {
             // The task will stop itself when it detects the player is no longer carrying a flag
@@ -785,17 +821,7 @@ public class CaptureTheFlagManager {
             flagCarriers.remove(carriedFlag);
             flagsAtBase.put(carriedFlag, true);
             
-            // Remove flag from player's inventory
-            ItemStack flag = teamFlags.get(carriedFlag);
-            if (flag != null) {
-                for (int i = 0; i < player.getInventory().size(); i++) {
-                    ItemStack stack = player.getInventory().getStack(i);
-                    if (stack.getItem() == flag.getItem()) {
-                        player.getInventory().removeStack(i);
-                        break;
-                    }
-                }
-            }
+            // No need to remove flag from inventory since no banner item is given
             
             // Announce flag return
             battle.broadcastToGamePlayers(
@@ -844,7 +870,7 @@ public class CaptureTheFlagManager {
             // Get team formatting
             BattleTeam team = battle.getTeam(teamName);
             if (team != null) {
-                scoreMessage.append(teamName).append(": ").append(score).append("/").append(scoreToWin);
+                scoreMessage.append(teamName).append(": ").append(score);
             }
             first = false;
         }
@@ -893,12 +919,7 @@ public class CaptureTheFlagManager {
         }
         
         // Stop all flag carrier effects
-        for (UUID playerId : new HashSet<>(carrierEffectTasks.keySet())) {
-            ServerPlayerEntity player = battle.getServer().getPlayerManager().getPlayer(playerId);
-            if (player != null) {
-                stopFlagCarrierEffects(player);
-            }
-        }
+        clearAllFlagCarrierEffects();
         
         // Clear all data
         flagBases.clear();
@@ -1013,5 +1034,71 @@ public class CaptureTheFlagManager {
                 }
             }
         }
+    }
+    
+    /**
+     * Add colored glowing effect by temporarily placing player in a flag-colored team
+     */
+    private void addColoredGlowing(ServerPlayerEntity player, String flagTeam) {
+        if (battle.getServer() == null) return;
+        
+        String tempTeamName = "ctf_flag_" + flagTeam.toLowerCase();
+        Scoreboard scoreboard = battle.getServer().getScoreboard();
+        
+        // Create temporary team for flag color if it doesn't exist
+        Team scoreboardTeam = scoreboard.getTeam(tempTeamName);
+        if (scoreboardTeam == null) {
+            scoreboardTeam = scoreboard.addTeam(tempTeamName);
+            
+            // Set team color based on flag
+            switch (flagTeam.toLowerCase()) {
+                case "red":
+                    scoreboardTeam.setColor(Formatting.RED);
+                    break;
+                case "blue":
+                    scoreboardTeam.setColor(Formatting.BLUE);
+                    break;
+                default:
+                    scoreboardTeam.setColor(Formatting.WHITE);
+            }
+            
+            // Enable glowing for this team
+            scoreboardTeam.setCollisionRule(AbstractTeam.CollisionRule.NEVER);
+            scoreboardTeam.setShowFriendlyInvisibles(true);
+        }
+        
+        // Add player to flag-colored team (this provides colored glowing)
+        scoreboard.addPlayerToTeam(player.getEntityName(), scoreboardTeam);
+        
+        // Apply vanilla glowing effect
+        player.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 999999, 0, false, false, true));
+    }
+    
+    /**
+     * Remove colored glowing effect by restoring player to their original battle team
+     */
+    private void removeColoredGlowing(ServerPlayerEntity player) {
+        if (battle.getServer() == null) return;
+        
+        Scoreboard scoreboard = battle.getServer().getScoreboard();
+        
+        // Remove player from any temporary flag team
+        Team currentTeam = scoreboard.getPlayerTeam(player.getEntityName());
+        if (currentTeam != null && currentTeam.getName().startsWith("ctf_flag_")) {
+            scoreboard.removePlayerFromTeam(player.getEntityName(), currentTeam);
+        }
+        
+        // Restore player to their original battle team
+        BattleTeam playerTeam = battle.getPlayerTeam(player.getUuid());
+        if (playerTeam != null) {
+            String teamName = "battle_" + playerTeam.getName().toLowerCase();
+            Team battleTeam = scoreboard.getTeam(teamName);
+            if (battleTeam != null) {
+                scoreboard.addPlayerToTeam(player.getEntityName(), battleTeam);
+            }
+        }
+        
+        // Remove glowing effect
+        player.removeStatusEffect(StatusEffects.GLOWING);
     }
 }

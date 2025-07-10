@@ -59,7 +59,17 @@ public class CTFCommands {
             BlockPos basePos = player.getBlockPos();
             CaptureTheFlagManager ctf = battle.getCTFManager();
             if (ctf != null) {
+                // Debug: Show exactly what we're setting
+                source.sendFeedback(() -> Text.literal("DEBUG: Setting base for team '" + playerTeam.getName() + "' at position " + basePos)
+                    .formatted(Formatting.YELLOW), false);
+                
                 ctf.setFlagBase(playerTeam.getName(), basePos);
+                
+                // Verify the base was set correctly
+                BlockPos retrievedBase = ctf.getTeamBase(playerTeam.getName());
+                source.sendFeedback(() -> Text.literal("DEBUG: Retrieved base for team '" + playerTeam.getName() + "' is " + retrievedBase)
+                    .formatted(Formatting.YELLOW), false);
+                
                 source.sendFeedback(() -> Text.literal("Set " + playerTeam.getDisplayName() + " team flag base at " + basePos)
                     .formatted(Formatting.GREEN), false);
                 return 1;
