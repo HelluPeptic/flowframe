@@ -15,6 +15,7 @@ import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.Team;
 import net.minecraft.scoreboard.AbstractTeam;
 import com.flowframe.features.chatformat.TablistUtil;
+import com.flowframe.features.gungame.DeathTrackingUtil;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -207,7 +208,43 @@ public class Battle {
         // Broadcast join message only to players in the battle
         broadcastToGamePlayers(Text.literal("[" + team.getDisplayName() + "] " + player.getName().getString() + " joined the game!"));
         
+        // Immediately teleport player to battle location when they join a team
+        teleportPlayerToBattleLocation(player, team);
+        
         return true;
+    }
+    
+    /**
+     * Teleport a player to the appropriate battle location based on game mode and team
+     */
+    private void teleportPlayerToBattleLocation(ServerPlayerEntity player, BattleTeam team) {
+        if (gameSpawnPoint == null) {
+            return; // No battle location set
+        }
+        
+        ServerWorld world = player.getServerWorld();
+        
+        // For CTF mode, try to teleport to team base if available
+        if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
+            BlockPos teamBase = ctfManager.getTeamBase(team.getName());
+            
+            if (teamBase != null) {
+                // Teleport to team base
+                player.teleport(world, teamBase.getX() + 0.5, teamBase.getY() + 1.0, 
+                    teamBase.getZ() + 0.5, player.getYaw(), player.getPitch());
+                
+                player.sendMessage(Text.literal("Teleported to " + team.getName() + " base!")
+                    .formatted(Formatting.GREEN), false);
+                return;
+            }
+        }
+        
+        // For other game modes or if no team base is set, teleport to battle spawn point
+        player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
+            gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
+        
+        player.sendMessage(Text.literal("Teleported to battle location!")
+            .formatted(Formatting.GREEN), false);
     }
     
     public BattleMode getBattleMode() {
@@ -300,43 +337,15 @@ public class Battle {
     private void startGracePeriod() {
         state = BattleState.GRACE_PERIOD;
         
-        // For CTF mode, always teleport players to their team bases after countdown
-        if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
+        // For subsequent rounds (not first round), teleport players back to battle locations
+        // First round players are already teleported when they join teams
+        if (currentRound > 1) {
             for (UUID playerId : playerTeams.keySet()) {
                 ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
                 if (player != null) {
                     BattleTeam playerTeam = playerTeams.get(playerId);
                     if (playerTeam != null) {
-                        // Try to get the team's base position
-                        BlockPos teamBase = ctfManager.getTeamBase(playerTeam.getName());
-                        
-                        ServerWorld world = player.getServerWorld();
-                        
-                        if (teamBase != null) {
-                            // Teleport to team base
-                            player.teleport(world, teamBase.getX() + 0.5, teamBase.getY() + 1.0, 
-                                teamBase.getZ() + 0.5, player.getYaw(), player.getPitch());
-                            
-                            // Success message for player
-                            player.sendMessage(Text.literal("Teleported to " + playerTeam.getName() + " base!")
-                                .formatted(Formatting.GREEN), false);
-                        } else {
-                            // Just teleport to spawn point without error message
-                            player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
-                                gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
-                        }
-                    }
-                }
-            }
-        } else {
-            // For other game modes, only teleport on first round
-            if (currentRound == 1) {
-                for (UUID playerId : playerTeams.keySet()) {
-                    ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
-                    if (player != null) {
-                        ServerWorld world = player.getServerWorld(); // Use player's current world
-                        player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
-                            gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
+                        teleportPlayerToBattleLocation(player, playerTeam);
                     }
                 }
             }
@@ -530,6 +539,9 @@ public class Battle {
                 
                 // Clear titles
                 player.networkHandler.sendPacket(new ClearTitleS2CPacket(true));
+                
+                // CRITICAL: Remove from scoreboard teams to clear nametag colors
+                removePlayerFromAllScoreboardTeams(player);
             }
         }
           // Reset game state
@@ -556,6 +568,12 @@ public class Battle {
             clearPersistentCTFBases();
         }
         
+        // Clear team prefixes from tablist to prevent persistence
+        TablistUtil.clearTeamPrefixes(server);
+        
+        // Clean up death tracking to prevent memory leaks
+        DeathTrackingUtil.cleanupAllDeathTracking();
+        
         broadcastToAll(Text.literal("Battle has ended. All players have been reset.")
             .formatted(Formatting.GREEN));
     }
@@ -581,6 +599,9 @@ public class Battle {
             ctfManager.handlePlayerLeave(player);
         }
         
+        // Clean up death tracking for this player
+        DeathTrackingUtil.cleanupDeathTracking(playerId);
+
         // Remove from scoreboard team
         if (player != null) {
             removePlayerFromAllScoreboardTeams(player);
@@ -883,6 +904,9 @@ public class Battle {
             ctfManager.handlePlayerLeave(player);
         }
         
+        // Clean up death tracking for this player
+        DeathTrackingUtil.cleanupDeathTracking(playerId);
+
         // Remove from scoreboard team
         if (player != null) {
             removePlayerFromAllScoreboardTeams(player);
@@ -963,6 +987,9 @@ public class Battle {
             if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
                 ctfManager.handlePlayerElimination(playerId);
             }
+            
+            // Update tablist to reflect team changes (spectator status)
+            TablistUtil.updateTablistDisplayNamesForAll(server);
             
             // Check if game should end
             if (state == BattleState.ACTIVE) {

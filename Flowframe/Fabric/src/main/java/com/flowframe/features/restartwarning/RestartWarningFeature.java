@@ -42,6 +42,10 @@ public class RestartWarningFeature {
     }
     
     private static void scheduleNextRestartWarning() {
+        scheduleRestartWarning(false);
+    }
+    
+    private static void scheduleRestartWarning(boolean forceNextDay) {
         if (scheduler == null || scheduler.isShutdown()) {
             return;
         }
@@ -49,8 +53,8 @@ public class RestartWarningFeature {
         ZonedDateTime now = ZonedDateTime.now(CET_ZONE);
         ZonedDateTime nextWarning = now.withHour(6).withMinute(55).withSecond(0).withNano(0);
         
-        // If it's already past 6:55 AM today, schedule for tomorrow
-        if (now.isAfter(nextWarning)) {
+        // If it's already past 6:55 AM today or we're forcing next day, schedule for tomorrow
+        if (now.isAfter(nextWarning) || forceNextDay) {
             nextWarning = nextWarning.plusDays(1);
         }
         
@@ -60,8 +64,8 @@ public class RestartWarningFeature {
         
         scheduler.schedule(() -> {
             sendRestartWarning();
-            // Schedule the next one for tomorrow
-            scheduleNextRestartWarning();
+            // Schedule the next one for tomorrow (force next day to avoid multiple messages)
+            scheduleRestartWarning(true);
         }, delayMinutes, TimeUnit.MINUTES);
     }
     

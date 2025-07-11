@@ -485,12 +485,23 @@ public class CaptureTheFlagManager {
         // Clear respawn delays and restore players from spectator mode
         clearAllRespawnDelays();
         
-        // DON'T clear flagBases - they should persist with particles
-        // flagBases.clear(); // REMOVED: bases should persist
+        // Clear ALL CTF state including bases (unlike reset() which preserves bases)
+        flagBases.clear();
         flagCarriers.clear();
         flagsAtBase.clear();
         teamFlags.clear();
         teamScores.clear();
+        
+        // Clean up any remaining CTF glow teams from scoreboard
+        cleanupCTFGlowTeams();
+        
+        // Shutdown schedulers
+        if (particleScheduler != null && !particleScheduler.isShutdown()) {
+            particleScheduler.shutdownNow();
+        }
+        if (timerScheduler != null && !timerScheduler.isShutdown()) {
+            timerScheduler.shutdownNow();
+        }
     }
     
     /**
@@ -1189,7 +1200,8 @@ public class CaptureTheFlagManager {
     }
     
     /**
-     * Complete shutdown - clear everything including bases and particles (for battle shutdown)
+     * Complete shutdown of CTF - clear everything including bases, particles, and team effects
+     * Called when the battle system is shutting down entirely
      */
     public void shutdownAndClearAll() {
         // Stop all particle effects
@@ -1201,51 +1213,51 @@ public class CaptureTheFlagManager {
         // Clear respawn delays and restore players from spectator mode
         clearAllRespawnDelays();
         
-        // Clear EVERYTHING including bases (this is a full shutdown)
-        flagBases.clear(); // This time we DO clear bases since battle is shutting down
+        // Clear ALL CTF state including bases (unlike reset() which preserves bases)
+        flagBases.clear();
         flagCarriers.clear();
         flagsAtBase.clear();
         teamFlags.clear();
         teamScores.clear();
         
-        // Stop timers
-        if (timerScheduler != null && !timerScheduler.isShutdown()) {
-            timerScheduler.shutdownNow();
-        }
+        // Clean up any remaining CTF glow teams from scoreboard
+        cleanupCTFGlowTeams();
         
-        // Stop particle scheduler
+        // Shutdown schedulers
         if (particleScheduler != null && !particleScheduler.isShutdown()) {
             particleScheduler.shutdownNow();
         }
+        if (timerScheduler != null && !timerScheduler.isShutdown()) {
+            timerScheduler.shutdownNow();
+        }
     }
     
     /**
-     * Get flag bases for persistence
+     * Clean up any CTF glow teams that may persist in the scoreboard
      */
-    public Map<String, BlockPos> getFlagBases() {
-        return new HashMap<>(flagBases);
-    }
-    
-    /**
-     * Restart particle effects for all existing bases
-     */
-    private void restartAllBaseParticles() {
-        // Stop any existing particle tasks first
-        for (ScheduledFuture<?> task : particleTasks.values()) {
-            if (task != null && !task.isCancelled()) {
-                task.cancel(false);
+    private void cleanupCTFGlowTeams() {
+        if (battle != null) {
+            MinecraftServer server = battle.getServer();
+            if (server != null) {
+                Scoreboard scoreboard = server.getScoreboard();
+                
+                // Remove all CTF glow teams
+                Collection<Team> allTeams = scoreboard.getTeams();
+                List<Team> teamsToRemove = new ArrayList<>();
+                
+                for (Team team : allTeams) {
+                    if (team.getName().startsWith("ctf_glow_")) {
+                        teamsToRemove.add(team);
+                    }
+                }
+                
+                for (Team team : teamsToRemove) {
+                    scoreboard.removeTeam(team);
+                }
             }
         }
-        particleTasks.clear();
-        
-        // Restart particles for all current bases
-        for (Map.Entry<String, BlockPos> entry : flagBases.entrySet()) {
-            String teamName = entry.getKey();
-            BlockPos basePos = entry.getValue();
-            startBaseParticles(teamName, basePos);
-        }
     }
-    
+
     /**
      * Ensure all base particles are active (public method for Battle to call)
      */
@@ -1296,5 +1308,16 @@ public class CaptureTheFlagManager {
         
         // Note: Original team restoration would need to be handled by the main battle system
         // when the CTF game ends, as we don't have direct access to Battle instance here
+    }
+
+    /**
+     * Restart particle effects for all existing bases
+     */
+    private void restartAllBaseParticles() {
+        for (Map.Entry<String, BlockPos> entry : flagBases.entrySet()) {
+            String teamName = entry.getKey();
+            BlockPos basePos = entry.getValue();
+            startBaseParticles(teamName, basePos);
+        }
     }
 }

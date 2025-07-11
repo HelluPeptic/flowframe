@@ -126,6 +126,18 @@ public class TablistUtil {
         }
     }
 
+    /**
+     * Clear team prefixes for all players by updating their tablist names
+     * Called when battles end to remove team color persistence
+     */
+    public static void clearTeamPrefixes(MinecraftServer server) {
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            // This will trigger getTablistName() which will see no active battle
+            // and return just the LuckPerms prefix without team colors
+            server.getPlayerManager().sendToAll(new PlayerListS2CPacket(PlayerListS2CPacket.Action.UPDATE_DISPLAY_NAME, player));
+        }
+    }
+
     public static void registerTablistAutoUpdate(MinecraftServer server) {
         ServerTickEvents.END_SERVER_TICK.register(srv -> {
             if (srv != server) return;

@@ -2,6 +2,7 @@ package com.flowframe.mixin;
 
 import com.flowframe.features.gungame.Battle;
 import com.flowframe.features.gungame.BattleTeam;
+import com.flowframe.features.gungame.DeathTrackingUtil;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.damage.DamageSource;
@@ -59,8 +60,8 @@ public abstract class MixinLivingEntity_BattlePvp {
                         // Completely prevent the damage and handle elimination immediately
                         cir.setReturnValue(false);
                         
-                        // Schedule immediate handling to avoid any potential death processing
-                        targetPlayer.getServer().execute(() -> handleBattleDeath(targetPlayer, game));
+                        // Handle death immediately without scheduling to avoid lag
+                        handleBattleDeath(targetPlayer, game);
                         return;
                     }
                 } else {
@@ -76,8 +77,8 @@ public abstract class MixinLivingEntity_BattlePvp {
                         // Prevent any lethal damage from non-players during battle
                         cir.setReturnValue(false);
                         
-                        // Schedule immediate handling
-                        targetPlayer.getServer().execute(() -> handleBattleDeath(targetPlayer, game));
+                        // Handle death immediately without scheduling to avoid lag
+                        handleBattleDeath(targetPlayer, game);
                         return;
                     }
                 } else {
@@ -87,12 +88,19 @@ public abstract class MixinLivingEntity_BattlePvp {
                 }
             }
         }
-    }
-      private void handleBattleDeath(ServerPlayerEntity player, Battle battle) {
+    }      private void handleBattleDeath(ServerPlayerEntity player, Battle battle) {
         if (battle.getState() != Battle.BattleState.ACTIVE) return;
         
         java.util.UUID playerId = player.getUuid();
         if (!battle.isPlayerInGame(playerId)) return;
+
+        // CRITICAL: Check if player is already eliminated/spectator to prevent spam
+        if (battle.isSpectator(playerId)) return;
+        
+        // CRITICAL: Check death cooldown to prevent rapid duplicate processing
+        if (!DeathTrackingUtil.shouldProcessDeath(playerId)) {
+            return; // Too soon since last death processing, ignore
+        }
 
         BattleTeam team = battle.getPlayerTeam(playerId);
         if (team == null) return;
@@ -121,27 +129,6 @@ public abstract class MixinLivingEntity_BattlePvp {
         // Show death message
         player.sendMessage(Text.literal("You died! Respawning at your base...")
             .formatted(Formatting.RED), false);
-        
-        // Teleport to team base after a short delay
-        player.getServer().execute(() -> {
-            try {
-                Thread.sleep(1000); // 1 second delay
-                if (ctfManager != null) {
-                    BlockPos teamBase = ctfManager.getTeamBase(team.getName());
-                    if (teamBase != null) {
-                        ServerWorld world = player.getServerWorld();
-                        player.teleport(world, teamBase.getX() + 0.5, teamBase.getY() + 1.0, 
-                            teamBase.getZ() + 0.5, player.getYaw(), player.getPitch());
-                        
-                        // Send respawn message
-                        player.sendMessage(Text.literal("Respawned at your base!")
-                            .formatted(Formatting.GREEN), true);
-                    }
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        });
     }
     
     private void handleEliminationDeath(ServerPlayerEntity player, Battle battle, BattleTeam team) {
