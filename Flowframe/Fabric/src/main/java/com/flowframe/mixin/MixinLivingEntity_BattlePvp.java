@@ -120,6 +120,9 @@ public abstract class MixinLivingEntity_BattlePvp {
         // Heal the player to full health (since we prevented the death)
         player.setHealth(player.getMaxHealth());
         
+        // CRITICAL: Refresh team color to prevent white nametag bug
+        battle.refreshPlayerTeamColor(player, team);
+        
         // Handle flag dropping if carrying one
         com.flowframe.features.gungame.CaptureTheFlagManager ctfManager = battle.getCTFManager();
         if (ctfManager != null) {
@@ -140,6 +143,9 @@ public abstract class MixinLivingEntity_BattlePvp {
         
         // Add to persistent spectators in case they disconnect
         com.flowframe.features.gungame.SpectatorPersistence.getInstance().addSpectator(playerId);
+        
+        // CRITICAL: Refresh team color to prevent white nametag bug before setting spectator mode
+        battle.refreshPlayerTeamColor(player, team);
         
         // Immediately set to spectator mode
         player.changeGameMode(GameMode.SPECTATOR);

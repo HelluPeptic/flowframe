@@ -163,6 +163,7 @@ public class CaptureTheFlagManager {
         // Store with normalized name
         flagBases.put(normalizedTeamName, basePos);
         
+        // CRITICAL: Always start new particles for the new base position
         startBaseParticles(normalizedTeamName, basePos);
         
         return true; // Successfully set base
@@ -354,7 +355,7 @@ public class CaptureTheFlagManager {
         BlockPos playerPos = player.getBlockPos();
         BlockPos teamBase = flagBases.get(playerTeamName);
         
-        if (teamBase == null || playerPos.getManhattanDistance(teamBase) > 5) {
+        if (teamBase == null || playerPos.getManhattanDistance(teamBase) > 2) { // Reduced range to 2x2
             player.sendMessage(Text.literal("You must be at your base to capture!").formatted(Formatting.RED), false);
             return false;
         }
@@ -627,7 +628,7 @@ public class CaptureTheFlagManager {
                 double distance = Math.sqrt(playerPos.getSquaredDistance(ownBase));
                 
                 
-                if (distance <= 5.0) {
+                if (distance <= 2.0) { // Reduced capture range to match pickup range
                     if (tryAutoCapture(player)) {
                         return; // Successfully captured, no need to check pickup
                     }
@@ -642,7 +643,7 @@ public class CaptureTheFlagManager {
                 if (enemyBase != null) {
                     double distance = Math.sqrt(playerPos.getSquaredDistance(enemyBase));
                     
-                    if (distance <= 5.0) {
+                    if (distance <= 2.0) { // Reduced pickup range to 2x2 as requested
                         if (tryAutoPickup(player, teamName)) {
                             break; // Only try one pickup per tick
                         }
@@ -807,7 +808,7 @@ public class CaptureTheFlagManager {
         addColoredGlowing(player, flagTeam);
         
         String taskId = "carrier_" + playerId.toString();
-        particleScheduler.scheduleAtFixedRate(() -> {
+        ScheduledFuture<?> task = particleScheduler.scheduleAtFixedRate(() -> {
             try {
                 if (player.isRemoved() || !flagCarriers.containsKey(flagTeam) || 
                     !flagCarriers.get(flagTeam).equals(playerId)) {
@@ -815,8 +816,9 @@ public class CaptureTheFlagManager {
                     return;
                 }
                 
-                // Refresh glowing effect to prevent it from expiring (only if still using vanilla glowing)
-                // With colored glowing via scoreboard teams, this is handled by the team membership
+                // Refresh glowing effect to prevent it from expiring 
+                // Re-apply glowing effect every few seconds to ensure it stays active
+                addColoredGlowing(player, flagTeam);
                 
                 ServerWorld world = player.getServerWorld();
                 Vec3d pos = player.getPos();
@@ -939,6 +941,9 @@ public class CaptureTheFlagManager {
     public void handlePlayerElimination(UUID playerId) {
         ServerPlayerEntity player = battle.getServer().getPlayerManager().getPlayer(playerId);
         if (player != null) {
+            // CRITICAL: Handle flag dropping FIRST before respawn delay to prevent flag duplication
+            handlePlayerLeave(player); // This will drop any carried flags
+            
             // Use handlePlayerDeath to trigger the 10-second respawn delay
             handlePlayerDeath(player);
         }
@@ -1123,10 +1128,13 @@ public class CaptureTheFlagManager {
         }
         
         // Announce flag drop
+        // REMOVED: "CTF Flags have been dropped!" message as requested
+        /*
         battle.broadcastToGamePlayers(
             Text.literal("CTF Flags have been dropped!")
                 .formatted(Formatting.GOLD, Formatting.BOLD)
         );
+        */
     }
     
     /**
