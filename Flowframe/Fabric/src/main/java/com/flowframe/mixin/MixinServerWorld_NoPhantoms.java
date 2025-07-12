@@ -18,7 +18,7 @@ public abstract class MixinServerWorld_NoPhantoms {
             if (serverWorld.getRegistryKey().getValue().equals(new Identifier("minecraft", "overworld"))) {
                 cir.setReturnValue(false); // Cancel phantom spawn in the overworld
             }
-            // Do nothing in the nether or other dimensions, let vanilla handle it
+            // Allow phantom spawns in nether and other dimensions - vanilla behavior
         }
     }
 }

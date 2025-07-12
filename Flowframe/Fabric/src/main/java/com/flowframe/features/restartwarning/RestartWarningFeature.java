@@ -58,15 +58,15 @@ public class RestartWarningFeature {
             nextWarning = nextWarning.plusDays(1);
         }
         
-        long delayMinutes = ChronoUnit.MINUTES.between(now, nextWarning);
+        long delaySeconds = ChronoUnit.SECONDS.between(now, nextWarning);
         
-        System.out.println("[FLOWFRAME] Next restart warning scheduled in " + delayMinutes + " minutes at " + nextWarning);
+        System.out.println("[FLOWFRAME] Next restart warning scheduled in " + (delaySeconds / 60) + " minutes and " + (delaySeconds % 60) + " seconds at " + nextWarning);
         
         scheduler.schedule(() -> {
             sendRestartWarning();
             // Schedule the next one for tomorrow (force next day to avoid multiple messages)
             scheduleRestartWarning(true);
-        }, delayMinutes, TimeUnit.MINUTES);
+        }, delaySeconds, TimeUnit.SECONDS);
     }
     
     private static void sendRestartWarning() {
