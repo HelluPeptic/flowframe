@@ -274,6 +274,12 @@ public class CaptureTheFlagManager {
      */
     public boolean tryPickupFlag(ServerPlayerEntity player, String flagTeam) {
         UUID playerId = player.getUuid();
+        
+        // CRITICAL: Prevent spectators from picking up flags
+        if (player.isSpectator() || playersInSpectatorMode.contains(playerId)) {
+            return false;
+        }
+        
         BattleTeam playerTeam = battle.getPlayerTeam(playerId);
         
         if (playerTeam == null) return false;
@@ -615,6 +621,12 @@ public class CaptureTheFlagManager {
      */
     public void handlePlayerMovement(ServerPlayerEntity player) {
         UUID playerId = player.getUuid();
+        
+        // CRITICAL: Prevent spectators from any CTF interactions
+        if (player.isSpectator() || playersInSpectatorMode.contains(playerId)) {
+            return;
+        }
+        
         BattleTeam playerTeam = battle.getPlayerTeam(playerId);
         if (playerTeam == null) return;
         
@@ -658,6 +670,11 @@ public class CaptureTheFlagManager {
      */
     private boolean tryAutoPickup(ServerPlayerEntity player, String flagTeam) {
         UUID playerId = player.getUuid();
+        
+        // CRITICAL: Prevent spectators from auto-picking up flags
+        if (player.isSpectator() || playersInSpectatorMode.contains(playerId)) {
+            return false;
+        }
         
         // Check conditions
         boolean flagAtBase = flagsAtBase.getOrDefault(flagTeam, true);
@@ -705,6 +722,12 @@ public class CaptureTheFlagManager {
      */
     private boolean tryAutoCapture(ServerPlayerEntity player) {
         UUID playerId = player.getUuid();
+        
+        // CRITICAL: Prevent spectators from capturing flags
+        if (player.isSpectator() || playersInSpectatorMode.contains(playerId)) {
+            return false;
+        }
+        
         BattleTeam playerTeam = battle.getPlayerTeam(playerId);
         if (playerTeam == null) return false;
         

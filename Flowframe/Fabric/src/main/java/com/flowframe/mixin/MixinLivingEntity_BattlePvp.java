@@ -116,22 +116,20 @@ public abstract class MixinLivingEntity_BattlePvp {
     private void handleCTFDeath(ServerPlayerEntity player, Battle battle, BattleTeam team) {
         java.util.UUID playerId = player.getUuid();
         
-        // In CTF mode, players respawn at their base instead of being eliminated
-        // Heal the player to full health (since we prevented the death)
-        player.setHealth(player.getMaxHealth());
+        // CRITICAL: Handle flag dropping FIRST before any other processing
+        com.flowframe.features.gungame.CaptureTheFlagManager ctfManager = battle.getCTFManager();
+        if (ctfManager != null) {
+            // Force immediate flag drop to prevent flag duplication exploit
+            ctfManager.handlePlayerLeave(player);
+            // Then handle the CTF death with respawn delay
+            ctfManager.handlePlayerDeath(player);
+        }
         
         // CRITICAL: Refresh team color to prevent white nametag bug
         battle.refreshPlayerTeamColor(player, team);
         
-        // Handle flag dropping if carrying one
-        com.flowframe.features.gungame.CaptureTheFlagManager ctfManager = battle.getCTFManager();
-        if (ctfManager != null) {
-            ctfManager.handlePlayerElimination(playerId);
-        }
-        
-        // Show death message
-        player.sendMessage(Text.literal("You died! Respawning at your base...")
-            .formatted(Formatting.RED), false);
+        // Don't heal immediately - let the CTF manager handle respawn timing
+        // The CTF manager will put player in spectator mode and respawn them after delay
     }
     
     private void handleEliminationDeath(ServerPlayerEntity player, Battle battle, BattleTeam team) {

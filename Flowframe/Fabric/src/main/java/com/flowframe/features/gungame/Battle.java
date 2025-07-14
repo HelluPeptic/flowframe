@@ -346,15 +346,28 @@ public class Battle {
     private void startGracePeriod() {
         state = BattleState.GRACE_PERIOD;
         
-        // For subsequent rounds (not first round), teleport players back to battle locations
-        // First round players are already teleported when they join teams
-        if (currentRound > 1) {
-            for (UUID playerId : playerTeams.keySet()) {
-                ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
-                if (player != null) {
-                    BattleTeam playerTeam = playerTeams.get(playerId);
-                    if (playerTeam != null) {
-                        teleportPlayerToBattleLocation(player, playerTeam);
+        // Teleport all players to their team bases immediately after countdown (before grace period)
+        for (UUID playerId : playerTeams.keySet()) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+            if (player != null) {
+                BattleTeam playerTeam = playerTeams.get(playerId);
+                if (playerTeam != null) {
+                    // For CTF mode, teleport to team base if available
+                    if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
+                        BlockPos teamBase = ctfManager.getTeamBase(playerTeam.getName());
+                        if (teamBase != null) {
+                            ServerWorld world = player.getServerWorld();
+                            player.teleport(world, teamBase.getX() + 0.5, teamBase.getY() + 1.0, 
+                                teamBase.getZ() + 0.5, player.getYaw(), player.getPitch());
+                            continue; // Skip battle spawn teleport
+                        }
+                    }
+                    
+                    // Fallback to battle spawn point for other game modes or if no base set
+                    if (gameSpawnPoint != null) {
+                        ServerWorld world = player.getServerWorld();
+                        player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
+                            gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
                     }
                 }
             }
@@ -383,33 +396,6 @@ public class Battle {
     private void startActiveGame() {
         state = BattleState.ACTIVE;
         pvpEnabled = true;
-        
-        // Teleport all players to their team bases after countdown completion
-        for (UUID playerId : playerTeams.keySet()) {
-            ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
-            if (player != null) {
-                BattleTeam playerTeam = playerTeams.get(playerId);
-                if (playerTeam != null) {
-                    // For CTF mode, teleport to team base if available
-                    if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
-                        BlockPos teamBase = ctfManager.getTeamBase(playerTeam.getName());
-                        if (teamBase != null) {
-                            ServerWorld world = player.getServerWorld();
-                            player.teleport(world, teamBase.getX() + 0.5, teamBase.getY() + 1.0, 
-                                teamBase.getZ() + 0.5, player.getYaw(), player.getPitch());
-                            continue; // Skip battle spawn teleport
-                        }
-                    }
-                    
-                    // Fallback to battle spawn point for other game modes or if no base set
-                    if (gameSpawnPoint != null) {
-                        ServerWorld world = player.getServerWorld();
-                        player.teleport(world, gameSpawnPoint.getX() + 0.5, gameSpawnPoint.getY(), 
-                            gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
-                    }
-                }
-            }
-        }
         
         // Start CTF timer if in CTF mode and ensure particles are active
         if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
