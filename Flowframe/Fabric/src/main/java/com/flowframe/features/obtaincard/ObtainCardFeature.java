@@ -22,6 +22,10 @@ public class ObtainCardFeature {
                     .executes(context -> obtainCard(context.getSource().getPlayer(), "gambling_card", 3)))
                 .then(net.minecraft.server.command.CommandManager.literal("reverse_card")
                     .executes(context -> obtainCard(context.getSource().getPlayer(), "reverse_card", 10)))
+                .then(net.minecraft.server.command.CommandManager.literal("angler_rune")
+                    .executes(context -> obtainCard(context.getSource().getPlayer(), "angler_rune", 10)))
+                .then(net.minecraft.server.command.CommandManager.literal("ancient_scarab")
+                    .executes(context -> obtainCard(context.getSource().getPlayer(), "ancient_scarab", 10)))
                 .then(net.minecraft.server.command.CommandManager.literal("ivy")
                     .executes(context -> obtainIvy(context.getSource().getPlayer()))));
         });
