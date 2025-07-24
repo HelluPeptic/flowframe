@@ -22,7 +22,8 @@
     "MixinPotionItem",
     "MixinArmsWorkbenchBlocker",
     "MixinLivingEntity_BattlePvp",
-    "MixinPlayerManager_BattleChat"
+    "MixinPlayerManager_BattleChat",
+    "MixinTrashBagItem"
   ],
   "injectors": {
     "defaultRequire": 1
