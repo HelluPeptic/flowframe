@@ -32,6 +32,7 @@ public class MixinTrashBagItem {
         "minecraft:elytra",
         "minecraft:warden_spawn_egg",
         "minecraft:debug_stick",
+        "minecraft:debug_stick",
         "majruszsaccessories:booster_overlay_single",
         "majruszsaccessories:booster_overlay_double",
         "majruszsaccessories:booster_overlay_tripple",
