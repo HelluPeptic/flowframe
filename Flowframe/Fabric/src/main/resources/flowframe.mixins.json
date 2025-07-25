@@ -16,14 +16,14 @@
     "MixinChatFormat",
     "MixinServerWorld_NoNiftyCartsPlow",
     "MixinLivingEntity_PvpToggle",
-    "MixinLivingEntity_RemoveSpelunker",
     "MixinLivingEntity_PotionDuration_Fast",
     "MixinLivingEntity_TipsyDuration",
     "MixinPotionItem",
     "MixinArmsWorkbenchBlocker",
     "MixinLivingEntity_BattlePvp",
     "MixinPlayerManager_BattleChat",
-    "MixinTrashBagItem"
+    "MixinTrashBagItem",
+    "MixinSpelunkerEffect"
   ],
   "injectors": {
     "defaultRequire": 1

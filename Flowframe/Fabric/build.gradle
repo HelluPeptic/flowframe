@@ -49,6 +49,7 @@ dependencies {
     // LuckPerms API for tablist prefixes
     modImplementation "net.luckperms:api:5.4"
     modImplementation files('libs/letsdo-furniture-fabric-1.0.4.jar')
+    compileOnly files('libs/mythicupgrades-4.2.0+mc1.20.1.jar')
 }
 
 loom {
