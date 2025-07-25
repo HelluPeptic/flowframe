@@ -22,9 +22,12 @@
     "MixinPotionItem",
     "MixinArmsWorkbenchBlocker",
     "MixinLivingEntity_BattlePvp",
-    "MixinPlayerManager_BattleChat",
-    "MixinTrashBagItem"
+    "MixinPlayerManager_BattleChat"
   ],
+  "client": [],
+  "server": [],
+  "refmap": "flowframe_fabric.refmap.json",
+  "minVersion": "0.8",
   "injectors": {
     "defaultRequire": 1
   }

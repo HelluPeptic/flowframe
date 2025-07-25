@@ -37,6 +37,9 @@ dependencies {
     annotationProcessor 'com.google.guava:guava:32.1.2-jre'
     compileOnly 'com.google.guava:guava:32.1.2-jre'
     api project(":Common")
+    
+    // Add local furniture mod jar as modImplementation for proper mixin support
+    modImplementation files('libs/letsdo-furniture-fabric-1.0.4.jar')
 
     modApi("com.terraformersmc:modmenu:7.0.1") { exclude(module: "fabric-api") }
 
@@ -48,7 +51,8 @@ dependencies {
     modImplementation "me.lucko:fabric-permissions-api:0.2-SNAPSHOT"
     // LuckPerms API for tablist prefixes
     modImplementation "net.luckperms:api:5.4"
-    modImplementation files('libs/letsdo-furniture-fabric-1.0.4.jar')
+    // Already included above
+    // modImplementation files('libs/letsdo-furniture-fabric-1.0.4.jar')
 }
 
 loom {
