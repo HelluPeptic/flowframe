@@ -13,7 +13,6 @@ public class MapRemovalFeature {
     private static boolean isMapItem(ItemStack stack) {
         return stack.isOf(Items.MAP) || 
                stack.isOf(Items.FILLED_MAP) || 
-               stack.isOf(Items.WRITABLE_BOOK) ||  // To catch map-in-book
                stack.getItem() instanceof FilledMapItem;
     }
     
