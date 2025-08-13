@@ -47,6 +47,7 @@ public class CaptureTheFlagManager {
     private ScheduledExecutorService particleScheduler;
     private ScheduledExecutorService timerScheduler;
     private boolean roundTimerActive = false;
+    private ScheduledFuture<?> flagCheckTask; // Task to check for missing flags
     
     // CTF game mode settings
     private CTFMode ctfMode = CTFMode.TIME; // Default to time-based mode
@@ -134,6 +135,17 @@ public class CaptureTheFlagManager {
                 teamFlags.put(teamName, flag);
             }
         }
+        
+        // Start periodic task to check for missing flags and respawn them
+        if (flagCheckTask != null) {
+            flagCheckTask.cancel(false);
+        }
+        flagCheckTask = timerScheduler.scheduleAtFixedRate(
+            this::checkAndFixMissingFlags,
+            10, // Initial delay of 10 seconds
+            15, // Run every 15 seconds
+            TimeUnit.SECONDS
+        );
     }
     /**
      * Set flag base location for a team and start particle effects
@@ -604,16 +616,65 @@ public class CaptureTheFlagManager {
                     UUID carrier = flagCarriers.get(team);
                     if (carrier != null) {
                         ServerPlayerEntity player = battle.getServer().getPlayerManager().getPlayer(carrier);
-                        String playerName = player != null ? player.getName().getString() : "Unknown";
-                        status.append("Carried by ").append(playerName);
+                        if (player != null) {
+                            String playerName = player.getName().getString();
+                            status.append("Carried by ").append(playerName);
+                        } else {
+                            // Player is offline/disconnected but still marked as carrier
+                            status.append("Missing (fixing...)");
+                            respawnMissingFlag(team);
+                        }
                     } else {
-                        status.append("Missing");
+                        // Flag is neither at base nor carried - it's missing
+                        status.append("Missing (fixing...)");
+                        respawnMissingFlag(team);
                     }
                 }
                 status.append("] ");
             }
         }
         return status.toString();
+    }
+    
+    /**
+     * Check for and fix missing flags automatically
+     */
+    public void checkAndFixMissingFlags() {
+        for (String team : flagBases.keySet()) {
+            if (!flagsAtBase.getOrDefault(team, true)) {
+                UUID carrier = flagCarriers.get(team);
+                if (carrier != null) {
+                    // Check if the carrier is still online and in the game
+                    ServerPlayerEntity player = battle.getServer().getPlayerManager().getPlayer(carrier);
+                    if (player == null || !battle.isPlayerInGame(carrier)) {
+                        // Player is offline or not in game, respawn flag
+                        respawnMissingFlag(team);
+                    }
+                } else {
+                    // No carrier but flag not at base - respawn it
+                    respawnMissingFlag(team);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Respawn a missing flag back to its base
+     */
+    private void respawnMissingFlag(String flagTeam) {
+        flagsAtBase.put(flagTeam, true);
+        flagCarriers.remove(flagTeam);
+        
+        // Notify all players
+        BattleTeam team = battle.getTeam(flagTeam);
+        if (team != null) {
+            battle.broadcastToGamePlayers(
+                Text.literal("[CTF] ").formatted(Formatting.GRAY)
+                    .append(Text.literal(flagTeam).formatted(team.getFormatting()))
+                    .append(Text.literal(" flag has been returned to base!"))
+                    .formatted(Formatting.YELLOW)
+            );
+        }
     }
     
     /**
@@ -1253,6 +1314,12 @@ public class CaptureTheFlagManager {
         
         // Clean up any remaining CTF glow teams from scoreboard
         cleanupCTFGlowTeams();
+        
+        // Cancel flag check task before shutting down schedulers
+        if (flagCheckTask != null && !flagCheckTask.isCancelled()) {
+            flagCheckTask.cancel(false);
+            flagCheckTask = null;
+        }
         
         // Shutdown schedulers
         if (particleScheduler != null && !particleScheduler.isShutdown()) {
