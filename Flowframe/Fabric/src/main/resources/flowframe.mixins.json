@@ -23,7 +23,9 @@
     "MixinPotionItem",
     "MixinArmsWorkbenchBlocker",
     "MixinLivingEntity_BattlePvp",
-    "MixinPlayerManager_BattleChat"
+    "MixinPlayerManager_BattleChat",
+    "MixinServerPlayerEntity_CTFMovement",
+    "MixinServerPlayerEntity_VoidTeleport"
   ],
   "client": [],
   "server": [],

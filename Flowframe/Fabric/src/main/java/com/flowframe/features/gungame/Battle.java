@@ -14,6 +14,9 @@ import net.minecraft.network.packet.s2c.play.OverlayMessageS2CPacket;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.Team;
 import net.minecraft.scoreboard.AbstractTeam;
+import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.entity.effect.StatusEffectInstance;
 import com.flowframe.features.chatformat.TablistUtil;
 import com.flowframe.features.gungame.DeathTrackingUtil;
 
@@ -48,9 +51,12 @@ public class Battle {
     private int currentRound = 0; // Current round number (0 = not started)
     private BattleMode battleMode = BattleMode.ELIMINATION; // Current battle mode
     private CaptureTheFlagManager ctfManager; // CTF manager for CTF mode
+    private VillagerDefenseManager villagerDefenseManager; // Villager Defense manager
     
     // Static storage for CTF bases that persist across battle restarts
     private static final Map<String, BlockPos> persistentCTFBases = new ConcurrentHashMap<>();
+    // Static storage for Villager Defense bases that persist across battle restarts
+    private static final Map<String, BlockPos> persistentVillagerBases = new ConcurrentHashMap<>();
     
     public enum BattleState {
         INACTIVE,      // No game running
@@ -89,6 +95,16 @@ public class Battle {
             return false;
         }
         
+        // CRITICAL: Clean up any existing managers before creating new ones
+        if (this.ctfManager != null) {
+            this.ctfManager.cleanup();  // This stops all particles and cleans up everything
+            this.ctfManager = null;
+        }
+        if (this.villagerDefenseManager != null) {
+            this.villagerDefenseManager.shutdownAndClearAll();
+            this.villagerDefenseManager = null;
+        }
+        
         this.gameSpawnPoint = spawnPoint;
         this.state = BattleState.WAITING;
         this.pvpEnabled = false;
@@ -102,6 +118,11 @@ public class Battle {
             if (ctfMode == CTFMode.SCORE) {
                 this.ctfManager.setTargetScore(targetScore);
             }
+        }
+        
+        // Initialize Villager Defense manager if needed
+        if (mode == BattleMode.VILLAGER_DEFENSE) {
+            this.villagerDefenseManager = new VillagerDefenseManager(this);
         }
         
         // Clear any existing data
@@ -205,6 +226,36 @@ public class Battle {
         // Update tablist for all players to show team changes
         TablistUtil.updateTablistDisplayNamesForAll(server);
         
+        // Apply uniform attributes if enabled
+        BattleSettings settings = BattleSettings.getInstance();
+        if (settings.isUniformSpeed() || settings.isUniformJumpBoost() || settings.isUniformAttributes()) {
+            // Apply attributes to this specific player
+            if (settings.isUniformSpeed()) {
+                player.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED).setBaseValue(0.1);
+            }
+            
+            if (settings.isUniformJumpBoost()) {
+                player.removeStatusEffect(StatusEffects.JUMP_BOOST);
+            }
+            
+            if (settings.isUniformAttributes()) {
+                // Apply comprehensive attribute override
+                player.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_DAMAGE).setBaseValue(1.0);
+                player.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_SPEED).setBaseValue(4.0);
+                player.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED).setBaseValue(0.1);
+                
+                // Clear all combat-affecting status effects
+                player.removeStatusEffect(StatusEffects.SPEED);
+                player.removeStatusEffect(StatusEffects.SLOWNESS);
+                player.removeStatusEffect(StatusEffects.JUMP_BOOST);
+                player.removeStatusEffect(StatusEffects.STRENGTH);
+                player.removeStatusEffect(StatusEffects.WEAKNESS);
+                player.removeStatusEffect(StatusEffects.RESISTANCE);
+                player.removeStatusEffect(StatusEffects.REGENERATION);
+                player.removeStatusEffect(StatusEffects.ABSORPTION);
+            }
+        }
+        
         // Broadcast join message only to players in the battle
         broadcastToGamePlayers(Text.literal("[" + team.getDisplayName() + "] " + player.getName().getString() + " joined the game!"));
         
@@ -287,6 +338,11 @@ public class Battle {
             // setupCTFBases(); // REMOVED: This was overriding manually set bases
         }
         
+        // Initialize Villager Defense if needed
+        if (battleMode == BattleMode.VILLAGER_DEFENSE && villagerDefenseManager != null) {
+            villagerDefenseManager.initializeVillagerDefense(teams.keySet());
+        }
+        
         startCountdown();
         return true;
     }
@@ -314,6 +370,11 @@ public class Battle {
             ctfManager.initializeCTF(teams.keySet());
             // Note: Do not auto-setup bases here - let players set them manually with /flowframe battle ctf setbase
             // setupCTFBases(); // REMOVED: This was overriding manually set bases
+        }
+        
+        // Initialize Villager Defense if needed
+        if (battleMode == BattleMode.VILLAGER_DEFENSE && villagerDefenseManager != null) {
+            villagerDefenseManager.initializeVillagerDefense(teams.keySet());
         }
         
         startCountdown();
@@ -397,11 +458,22 @@ public class Battle {
         state = BattleState.ACTIVE;
         pvpEnabled = true;
         
+        // Apply uniform attributes if any are enabled
+        BattleSettings settings = BattleSettings.getInstance();
+        if (settings.isUniformSpeed() || settings.isUniformJumpBoost() || settings.isUniformAttributes()) {
+            applyUniformAttributes();
+        }
+        
         // Start CTF timer if in CTF mode and ensure particles are active
         if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
             ctfManager.startRoundTimer();
             // Ensure all base particles are active at game start
             ctfManager.ensureBaseParticlesActive();
+        }
+        
+        // Start Villager Defense timer if in Villager Defense mode
+        if (battleMode == BattleMode.VILLAGER_DEFENSE && villagerDefenseManager != null) {
+            villagerDefenseManager.startTimedRound();
         }
         
         // Notify all players that PvP is now active
@@ -559,6 +631,9 @@ public class Battle {
                         gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
                 }
                 
+                // Reset player speed to default
+                resetSinglePlayerSpeed(player);
+                
                 // Clear titles
                 player.networkHandler.sendPacket(new ClearTitleS2CPacket(true));
                 
@@ -588,6 +663,13 @@ public class Battle {
             ctfManager = null;
             // Clear persistent bases too since battle is being shut down
             clearPersistentCTFBases();
+        }
+        
+        // Reset Villager Defense if it was a Villager Defense game
+        if (battleMode == BattleMode.VILLAGER_DEFENSE && villagerDefenseManager != null) {
+            villagerDefenseManager.shutdownAndClearAll();
+            villagerDefenseManager = null;
+            clearPersistentVillagerBases();
         }
         
         // Clear team prefixes from tablist to prevent persistence
@@ -749,6 +831,10 @@ public class Battle {
     
     public CaptureTheFlagManager getCTFManager() {
         return ctfManager;
+    }
+    
+    public VillagerDefenseManager getVillagerDefenseManager() {
+        return villagerDefenseManager;
     }
     
     public Map<UUID, BattleTeam> getPlayerTeams() {
@@ -945,6 +1031,9 @@ public class Battle {
                 player.teleport(world, originalPos.getX() + 0.5, originalPos.getY(), 
                     originalPos.getZ() + 0.5, player.getYaw(), player.getPitch());
             }
+            
+            // Reset player speed to default
+            resetSinglePlayerSpeed(player);
             
             player.networkHandler.sendPacket(new ClearTitleS2CPacket(true));
             player.sendMessage(Text.literal("You have left the battle.")
@@ -1144,6 +1233,10 @@ public class Battle {
         persistentCTFBases.clear();
     }
 
+    public static void clearPersistentVillagerBases() {
+        persistentVillagerBases.clear();
+    }
+
     /**
      * Refresh player's team color to prevent nametag color persistence bugs
      * Should be called whenever player dies to ensure color stays correct
@@ -1159,5 +1252,126 @@ public class Battle {
         
         // Update tablist for all players to reflect the change
         TablistUtil.updateTablistDisplayNamesForAll(server);
+    }
+    
+    /**
+     * Apply uniform speed to all battle players
+     */
+    public void applyUniformSpeed() {
+        if (server == null) return;
+        
+        for (UUID playerId : playerTeams.keySet()) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+            if (player != null) {
+                // Set movement speed to a standard value (0.1 is default)
+                player.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED)
+                    .setBaseValue(0.1);
+            }
+        }
+    }
+    
+    /**
+     * Reset player speeds to their original values
+     */
+    public void resetPlayerSpeeds() {
+        if (server == null) return;
+        
+        for (UUID playerId : playerTeams.keySet()) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+            if (player != null) {
+                // Reset to default movement speed
+                player.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED)
+                    .setBaseValue(0.1); // 0.1 is the default player speed
+            }
+        }
+    }
+    
+    private void resetSinglePlayerSpeed(ServerPlayerEntity player) {
+        if (player != null) {
+            player.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED)
+                .setBaseValue(0.1); // 0.1 is the default player speed
+        }
+    }
+    
+    /**
+     * Apply uniform attributes to all players based on current settings
+     */
+    public void applyUniformAttributes() {
+        if (server == null) return;
+        
+        BattleSettings settings = BattleSettings.getInstance();
+        for (UUID playerId : playerTeams.keySet()) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+            if (player != null) {
+                // Apply speed uniformity
+                if (settings.isUniformSpeed()) {
+                    player.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED)
+                        .setBaseValue(0.1); // Standard speed
+                }
+                
+                // Apply jump boost uniformity
+                if (settings.isUniformJumpBoost()) {
+                    player.removeStatusEffect(StatusEffects.JUMP_BOOST);
+                    // No jump boost - everyone at base level
+                }
+                
+                // Apply comprehensive attribute overrides
+                if (settings.isUniformAttributes()) {
+                    // Override all combat and movement attributes
+                    player.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_DAMAGE)
+                        .setBaseValue(1.0); // Standard attack damage
+                    player.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_SPEED)
+                        .setBaseValue(4.0); // Standard attack speed
+                    player.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED)
+                        .setBaseValue(0.1); // Standard movement speed
+                    
+                    // Clear all status effects that could affect combat
+                    player.removeStatusEffect(StatusEffects.SPEED);
+                    player.removeStatusEffect(StatusEffects.SLOWNESS);
+                    player.removeStatusEffect(StatusEffects.JUMP_BOOST);
+                    player.removeStatusEffect(StatusEffects.STRENGTH);
+                    player.removeStatusEffect(StatusEffects.WEAKNESS);
+                    player.removeStatusEffect(StatusEffects.RESISTANCE);
+                    player.removeStatusEffect(StatusEffects.REGENERATION);
+                    player.removeStatusEffect(StatusEffects.ABSORPTION);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Reset all player attributes to defaults (called when settings are disabled)
+     */
+    public void resetPlayerAttributes() {
+        if (server == null) return;
+        
+        for (UUID playerId : playerTeams.keySet()) {
+            ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+            if (player != null) {
+                // Reset to default values - this allows skill tree bonuses to take effect again
+                player.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED)
+                    .setBaseValue(0.1);
+                player.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_DAMAGE)
+                    .setBaseValue(1.0);
+                player.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_SPEED)
+                    .setBaseValue(4.0);
+                
+                // Note: We don't restore status effects as those should be re-applied by skill trees
+            }
+        }
+    }
+    
+    /**
+     * Get team base location based on current game mode
+     */
+    public BlockPos getTeamBase(String teamName) {
+        switch (battleMode) {
+            case CAPTURE_THE_FLAG:
+                return persistentCTFBases.get(teamName.toLowerCase());
+            case VILLAGER_DEFENSE:
+                return persistentVillagerBases.get(teamName.toLowerCase());
+            default:
+                return gameSpawnPoint; // Default to game spawn for elimination mode
+        }
     }
 }

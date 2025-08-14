@@ -5,7 +5,8 @@ package com.flowframe.features.gungame;
  */
 public enum BattleMode {
     ELIMINATION("Elimination", "Last team standing wins!"),
-    CAPTURE_THE_FLAG("Capture the Flag", "Capture the enemy flag and return it to your base!");
+    CAPTURE_THE_FLAG("Capture the Flag", "Capture the enemy flag and return it to your base!"),
+    VILLAGER_DEFENSE("Villager Defense", "Protect your villager while destroying the enemy's villager!");
     
     private final String displayName;
     private final String description;

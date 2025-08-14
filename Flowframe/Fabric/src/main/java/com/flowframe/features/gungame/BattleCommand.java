@@ -24,6 +24,30 @@ public class BattleCommand {
         (context, builder) -> {
             builder.suggest("elimination");
             builder.suggest("capture_the_flag");
+            builder.suggest("villager_defense");
+            return builder.buildFuture();
+        };
+    
+    // Suggestion provider for settings
+    private static final SuggestionProvider<ServerCommandSource> SETTING_SUGGESTIONS = 
+        (context, builder) -> {
+            String gamemode = context.getArgument("gamemode", String.class);
+            BattleMode mode = BattleMode.fromString(gamemode);
+            if (mode != null) {
+                for (String setting : BattleSettings.getInstance().getSettingSuggestions(mode)) {
+                    builder.suggest(setting);
+                }
+            }
+            return builder.buildFuture();
+        };
+    
+    // Suggestion provider for setting values
+    private static final SuggestionProvider<ServerCommandSource> VALUE_SUGGESTIONS = 
+        (context, builder) -> {
+            String setting = context.getArgument("setting", String.class);
+            for (String value : BattleSettings.getInstance().getValueSuggestions(setting)) {
+                builder.suggest(value);
+            }
             return builder.buildFuture();
         };
     
@@ -74,6 +98,15 @@ public class BattleCommand {
                         .executes(BattleCommand::getStatus))
                     .then(CommandManager.literal("help")
                         .executes(BattleCommand::showHelp))
+                    .then(CommandManager.literal("settings")
+                        .then(CommandManager.argument("gamemode", StringArgumentType.string())
+                            .suggests(GAMEMODE_SUGGESTIONS)
+                            .executes(BattleCommand::showGameSettings)
+                            .then(CommandManager.argument("setting", StringArgumentType.string())
+                                .suggests(SETTING_SUGGESTIONS)
+                                .then(CommandManager.argument("value", StringArgumentType.string())
+                                    .suggests(VALUE_SUGGESTIONS)
+                                    .executes(BattleCommand::setSetting)))))
                     .then(CommandManager.literal("togglenotifications")
                         .executes(BattleCommand::toggleNotifications))
                     .then(CommandManager.literal("giveup")
@@ -89,7 +122,7 @@ public class BattleCommand {
         // Parse game mode
         BattleMode mode = BattleMode.fromString(gameModeStr);
         if (mode == null) {
-            source.sendError(Text.literal("Invalid game mode! Available modes: elimination, capture_the_flag"));
+            source.sendError(Text.literal("Invalid game mode! Available modes: elimination, capture_the_flag, villager_defense"));
             return 0;
         }
         
@@ -118,7 +151,7 @@ public class BattleCommand {
         // Parse game mode
         BattleMode mode = BattleMode.fromString(gameModeStr);
         if (mode == null) {
-            source.sendError(Text.literal("Invalid game mode! Available modes: elimination, capture_the_flag"));
+            source.sendError(Text.literal("Invalid game mode! Available modes: elimination, capture_the_flag, villager_defense"));
             return 0;
         }
         
@@ -584,7 +617,7 @@ public class BattleCommand {
             .append(Text.literal("/flowframe battle boot <gamemode> [x y z]").formatted(Formatting.YELLOW))
             .append(Text.literal(" - Start a new battle\n").formatted(Formatting.WHITE))
             .append(Text.literal("  Available modes: ").formatted(Formatting.GRAY))
-            .append(Text.literal("elimination, capture_the_flag\n").formatted(Formatting.AQUA))
+            .append(Text.literal("elimination, capture_the_flag, villager_defense\n").formatted(Formatting.AQUA))
             
             .append(Text.literal("/flowframe battle join <team>").formatted(Formatting.YELLOW))
             .append(Text.literal(" - Join a team\n").formatted(Formatting.WHITE))
@@ -597,6 +630,12 @@ public class BattleCommand {
             
             .append(Text.literal("/flowframe battle status").formatted(Formatting.YELLOW))
             .append(Text.literal(" - Show current battle status\n").formatted(Formatting.WHITE))
+            
+            .append(Text.literal("/flowframe battle settings <gamemode>").formatted(Formatting.YELLOW))
+            .append(Text.literal(" - Show settings for a gamemode\n").formatted(Formatting.WHITE))
+            
+            .append(Text.literal("/flowframe battle settings <gamemode> <setting> <value>").formatted(Formatting.YELLOW))
+            .append(Text.literal(" - Change gamemode settings\n").formatted(Formatting.WHITE))
             
             .append(Text.literal("/flowframe battle giveup").formatted(Formatting.YELLOW))
             .append(Text.literal(" - Give up and become spectator\n").formatted(Formatting.WHITE))
@@ -730,5 +769,21 @@ public class BattleCommand {
         } catch (Exception e) {
             return source.hasPermissionLevel(2);
         }
+    }
+    
+    private static int showGameSettings(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        String gamemode = StringArgumentType.getString(context, "gamemode");
+        
+        return BattleSettings.getInstance().showSettings(source, gamemode);
+    }
+    
+    private static int setSetting(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        String gamemode = StringArgumentType.getString(context, "gamemode");
+        String setting = StringArgumentType.getString(context, "setting");
+        String value = StringArgumentType.getString(context, "value");
+        
+        return BattleSettings.getInstance().handleSettingsCommand(source, gamemode, setting, value);
     }
 }

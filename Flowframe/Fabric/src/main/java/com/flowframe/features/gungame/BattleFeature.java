@@ -9,6 +9,7 @@ public class BattleFeature {
         // Register commands
         BattleCommand.register();
         CTFCommands.register();
+        VillagerDefenseCommands.register();
         
         // Initialize battle when server starts
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
