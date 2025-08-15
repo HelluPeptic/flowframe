@@ -17,6 +17,7 @@ import net.minecraft.entity.EntityType;
 import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.village.VillagerProfession;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.world.World;
@@ -200,6 +201,9 @@ public class VillagerDefenseManager {
         villager.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, Integer.MAX_VALUE, 2, false, false));
         villager.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, Integer.MAX_VALUE, 1, false, false));
         
+        // Set invulnerability based on current PvP status (grace period protection)
+        villager.setInvulnerable(!battle.isPvpEnabled());
+        
         // Set custom name based on team
         String teamColor = teamName.equalsIgnoreCase("red") ? "red" : "blue";
         villager.setCustomName(Text.literal(teamName.substring(0, 1).toUpperCase() + teamName.substring(1) + " Team Villager").formatted(
@@ -277,6 +281,9 @@ public class VillagerDefenseManager {
      * Check villager health and handle game win conditions
      */
     private void checkVillagerHealth() {
+        // Update villager invulnerability based on PvP status
+        updateVillagerInvulnerability();
+        
         for (Map.Entry<String, VillagerEntity> entry : teamVillagers.entrySet()) {
             String teamName = entry.getKey();
             VillagerEntity villager = entry.getValue();
@@ -292,6 +299,18 @@ public class VillagerDefenseManager {
             if (health <= 100.0f) { // Less than 10% health
                 broadcastMessage(Text.literal(teamName + " team's villager is critically injured! (" + 
                     Math.round(health) + "/1000 HP)").formatted(Formatting.RED));
+            }
+        }
+    }
+    
+    /**
+     * Update villager invulnerability based on grace period status
+     */
+    private void updateVillagerInvulnerability() {
+        boolean gracePeriod = !battle.isPvpEnabled();
+        for (VillagerEntity villager : teamVillagers.values()) {
+            if (villager != null && !villager.isRemoved()) {
+                villager.setInvulnerable(gracePeriod);
             }
         }
     }
@@ -539,6 +558,58 @@ public class VillagerDefenseManager {
             return villager.getMaxHealth();
         }
         return 1000.0f; // Default max health
+    }
+    
+    /**
+     * Manually enable/disable villager protection
+     */
+    public void setVillagerProtection(boolean protect) {
+        for (VillagerEntity villager : teamVillagers.values()) {
+            if (villager != null && !villager.isRemoved()) {
+                villager.setInvulnerable(protect);
+                if (protect) {
+                    // Also add resistance during protection
+                    villager.addStatusEffect(new StatusEffectInstance(StatusEffects.RESISTANCE, Integer.MAX_VALUE, 4, false, false));
+                } else {
+                    // Remove resistance when protection is disabled
+                    villager.removeStatusEffect(StatusEffects.RESISTANCE);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Remove villager status effects from all existing villagers
+     */
+    public void removeVillagerEffects() {
+        for (VillagerEntity villager : teamVillagers.values()) {
+            if (villager != null && !villager.isRemoved()) {
+                villager.removeStatusEffect(StatusEffects.RESISTANCE);
+                villager.removeStatusEffect(StatusEffects.REGENERATION);
+            }
+        }
+    }
+    
+    /**
+     * Called when a villager takes damage (from mixin)
+     */
+    public void onVillagerDamaged(VillagerEntity villager, DamageSource source, float amount) {
+        if (!isTeamVillager(villager)) {
+            return; // Not our villager
+        }
+        
+        // Check if villager is about to die
+        if (villager.getHealth() - amount <= 0) {
+            // Find which team this villager belongs to
+            for (Map.Entry<String, VillagerEntity> entry : teamVillagers.entrySet()) {
+                if (entry.getValue() == villager) {
+                    String teamName = entry.getKey();
+                    // Handle the death immediately
+                    handleVillagerDeath(teamName);
+                    break;
+                }
+            }
+        }
     }
     
     /**

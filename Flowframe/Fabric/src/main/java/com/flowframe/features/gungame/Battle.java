@@ -240,9 +240,13 @@ public class Battle {
             
             if (settings.isUniformAttributes()) {
                 // Apply comprehensive attribute override
+                player.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH).setBaseValue(20.0);
                 player.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_DAMAGE).setBaseValue(1.0);
                 player.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_SPEED).setBaseValue(4.0);
                 player.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED).setBaseValue(0.1);
+                
+                // Set current health to match max health
+                player.setHealth(20.0f);
                 
                 // Clear all combat-affecting status effects
                 player.removeStatusEffect(StatusEffects.SPEED);
@@ -1318,12 +1322,17 @@ public class Battle {
                 // Apply comprehensive attribute overrides
                 if (settings.isUniformAttributes()) {
                     // Override all combat and movement attributes
+                    player.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH)
+                        .setBaseValue(20.0); // Standard vanilla health
                     player.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_DAMAGE)
                         .setBaseValue(1.0); // Standard attack damage
                     player.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_SPEED)
                         .setBaseValue(4.0); // Standard attack speed
                     player.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED)
                         .setBaseValue(0.1); // Standard movement speed
+                    
+                    // Set current health to match max health
+                    player.setHealth(20.0f);
                     
                     // Clear all status effects that could affect combat
                     player.removeStatusEffect(StatusEffects.SPEED);
@@ -1355,6 +1364,11 @@ public class Battle {
                     .setBaseValue(1.0);
                 player.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_SPEED)
                     .setBaseValue(4.0);
+                player.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH)
+                    .setBaseValue(20.0);
+                
+                // Heal player to full health after resetting max health
+                player.setHealth(player.getMaxHealth());
                 
                 // Note: We don't restore status effects as those should be re-applied by skill trees
             }
