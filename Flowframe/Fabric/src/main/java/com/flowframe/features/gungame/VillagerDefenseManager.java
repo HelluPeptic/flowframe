@@ -169,8 +169,18 @@ public class VillagerDefenseManager {
     
     /**
      * Spawn a villager at the specified base location
+     * Only spawns if the battle is currently active
      */
     private void spawnVillager(String teamName, BlockPos basePos) {
+        // Only spawn villagers during active games
+        Battle.BattleState currentState = battle.getState();
+        if (currentState != Battle.BattleState.ACTIVE && 
+            currentState != Battle.BattleState.COUNTDOWN &&
+            currentState != Battle.BattleState.GRACE_PERIOD &&
+            currentState != Battle.BattleState.WAITING) {
+            return; // Don't spawn villagers when battle is inactive or ending
+        }
+        
         MinecraftServer server = battle.getServer();
         if (server == null) return;
         
@@ -316,34 +326,23 @@ public class VillagerDefenseManager {
     }
     
     /**
-     * Handle when a team's villager dies
+     * Handle when a team's villager dies - no longer ends game immediately
      */
     private void handleVillagerDeath(String deadTeam) {
-        // Find the opposing team
-        String winningTeam = null;
-        for (String teamName : allowedTeams) {
-            if (!teamName.equalsIgnoreCase(deadTeam)) {
-                winningTeam = teamName;
-                break;
-            }
-        }
+        // Announce villager death
+        broadcastMessage(Text.literal(deadTeam.toUpperCase() + " TEAM'S VILLAGER HAS BEEN DESTROYED!").formatted(
+            deadTeam.equalsIgnoreCase("red") ? Formatting.RED : Formatting.BLUE, Formatting.BOLD
+        ));
+        broadcastMessage(Text.literal(deadTeam + " team can no longer respawn! Eliminate remaining players to win.").formatted(Formatting.YELLOW));
         
-        if (winningTeam != null) {
-            // Announce victory
-            broadcastMessage(Text.literal(winningTeam.toUpperCase() + " TEAM WINS!").formatted(
-                winningTeam.equalsIgnoreCase("red") ? Formatting.RED : Formatting.BLUE
-            ));
-            broadcastMessage(Text.literal(deadTeam + " team's villager has been defeated!").formatted(Formatting.GRAY));
-            
-            // Play victory sound
-            playVictorySound();
-            
-            // End the game
-            BattleTeam team = battle.getTeam(winningTeam);
-            if (team != null) {
-                battle.endGame(team);
-            }
-        }
+        // Remove the dead villager from tracking
+        teamVillagers.remove(deadTeam.toLowerCase());
+        
+        // Play destruction sound
+        playVictorySound();
+        
+        // Don't end the game immediately - let the battle system handle player elimination
+        // The game will end when all players of the team without villager are eliminated
     }
     
     /**
@@ -441,10 +440,30 @@ public class VillagerDefenseManager {
         // Stop all particle effects
         stopAllParticles();
         
-        // Remove all villagers
+        // Remove all villagers from tracking
         for (VillagerEntity villager : teamVillagers.values()) {
             if (villager != null && !villager.isRemoved()) {
                 villager.discard();
+            }
+        }
+        
+        // Also search for and remove any team villagers that might not be in our tracking
+        // (in case of sync issues or leftover villagers)
+        MinecraftServer server = battle.getServer();
+        if (server != null) {
+            ServerWorld world = server.getOverworld();
+            if (world != null) {
+                // Find all villagers in the world and remove team villagers
+                world.getEntitiesByType(EntityType.VILLAGER, (villager) -> {
+                    if (villager instanceof VillagerEntity) {
+                        NbtCompound nbt = villager.writeNbt(new NbtCompound());
+                        if (nbt.getBoolean("IsTeamVillager")) {
+                            villager.discard();
+                            return true;
+                        }
+                    }
+                    return false;
+                });
             }
         }
         
@@ -622,5 +641,21 @@ public class VillagerDefenseManager {
                 villager.setHealth(newHealth);
             }
         }
+    }
+    
+    /**
+     * Check if a team has a living villager (for respawn mechanics)
+     */
+    public boolean hasLivingVillager(String teamName) {
+        String normalizedTeamName = teamName.toLowerCase();
+        VillagerEntity villager = teamVillagers.get(normalizedTeamName);
+        return villager != null && !villager.isRemoved() && villager.isAlive();
+    }
+    
+    /**
+     * Get villager base for a team (for respawn location)
+     */
+    public BlockPos getVillagerBase(String teamName) {
+        return villagerBases.get(teamName.toLowerCase());
     }
 }

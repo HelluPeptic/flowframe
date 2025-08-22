@@ -18,6 +18,7 @@ public class BattleSettings {
     private boolean uniformSpeed = true; // Whether all players have the same movement speed (default enabled)
     private boolean uniformJumpBoost = true; // Whether all players have the same jump boost (default enabled)
     private boolean uniformAttributes = true; // Whether to override all player attributes for fair play (default enabled)
+    private boolean uniformHealth = true; // Whether to aggressively enforce 20 HP for all players (default enabled)
     
     // CTF-specific settings
     private CTFMode ctfMode = CTFMode.TIME;
@@ -57,6 +58,8 @@ public class BattleSettings {
                     return setUniformJumpBoost(source, value);
                 case "uniformattributes":
                     return setUniformAttributes(source, value);
+                case "uniformhealth":
+                    return setUniformHealth(source, value);
                 case "ctfmode":
                     if (mode != BattleMode.CAPTURE_THE_FLAG) {
                         source.sendError(Text.literal("ctfmode setting is only available for capture_the_flag mode"));
@@ -104,6 +107,7 @@ public class BattleSettings {
         source.sendFeedback(() -> Text.literal("  uniformspeed: " + (uniformSpeed ? "enabled" : "disabled")), false);
         source.sendFeedback(() -> Text.literal("  uniformjumpboost: " + (uniformJumpBoost ? "enabled" : "disabled")), false);
         source.sendFeedback(() -> Text.literal("  uniformattributes: " + (uniformAttributes ? "enabled" : "disabled")), false);
+        source.sendFeedback(() -> Text.literal("  uniformhealth: " + (uniformHealth ? "enabled" : "disabled")), false);
         
         // Show mode-specific settings
         switch (mode) {
@@ -168,7 +172,7 @@ public class BattleSettings {
                 // Apply speed changes to all active battle players
                 Battle battle = Battle.getInstance();
                 if (battle.getState() != Battle.BattleState.INACTIVE) {
-                    battle.applyUniformSpeed();
+                    battle.enforceUniformSpeedAll();
                 }
                 
                 return 1;
@@ -181,7 +185,7 @@ public class BattleSettings {
                 // Reset speed changes for all active battle players
                 Battle battle2 = Battle.getInstance();
                 if (battle2.getState() != Battle.BattleState.INACTIVE) {
-                    battle2.resetPlayerSpeeds();
+                    battle2.restoreOriginalSpeedAll();
                 }
                 
                 return 1;
@@ -250,6 +254,40 @@ public class BattleSettings {
                 Battle battle2 = Battle.getInstance();
                 if (battle2.getState() != Battle.BattleState.INACTIVE) {
                     battle2.resetPlayerAttributes();
+                }
+                
+                return 1;
+            default:
+                source.sendError(Text.literal("Invalid value: " + value + ". Use: true/false, enabled/disabled, or on/off"));
+                return 0;
+        }
+    }
+    
+    private int setUniformHealth(ServerCommandSource source, String value) {
+        switch (value.toLowerCase()) {
+            case "true":
+            case "enabled":
+            case "on":
+                this.uniformHealth = true;
+                source.sendFeedback(() -> Text.literal("Uniform health enforcement enabled (all players locked to 20 HP)").formatted(Formatting.GREEN), true);
+                
+                // Apply aggressive health enforcement for all active battle players
+                Battle battle = Battle.getInstance();
+                if (battle.getState() != Battle.BattleState.INACTIVE) {
+                    battle.enforceUniformHealthAll();
+                }
+                
+                return 1;
+            case "false":
+            case "disabled":
+            case "off":
+                this.uniformHealth = false;
+                source.sendFeedback(() -> Text.literal("Uniform health enforcement disabled (original health restored)").formatted(Formatting.GREEN), true);
+                
+                // Restore original health for all active battle players
+                Battle battle2 = Battle.getInstance();
+                if (battle2.getState() != Battle.BattleState.INACTIVE) {
+                    battle2.restoreOriginalHealthAll();
                 }
                 
                 return 1;
@@ -334,7 +372,7 @@ public class BattleSettings {
     }
     
     private String getAvailableSettings(BattleMode mode) {
-        StringBuilder settings = new StringBuilder("voidlevel, uniformhearts, uniformspeed, uniformjumpboost, uniformattributes");
+        StringBuilder settings = new StringBuilder("voidlevel, uniformhearts, uniformspeed, uniformjumpboost, uniformattributes, uniformhealth");
         
         switch (mode) {
             case CAPTURE_THE_FLAG:
@@ -371,6 +409,7 @@ public class BattleSettings {
             case "uniformspeed":
             case "uniformjumpboost":
             case "uniformattributes":
+            case "uniformhealth":
                 return Arrays.asList("enabled", "disabled");
             case "ctfmode":
                 return Arrays.asList("time", "score");
@@ -391,6 +430,7 @@ public class BattleSettings {
     public boolean isUniformSpeed() { return uniformSpeed; }
     public boolean isUniformJumpBoost() { return uniformJumpBoost; }
     public boolean isUniformAttributes() { return uniformAttributes; }
+    public boolean isUniformHealth() { return uniformHealth; }
     public CTFMode getCTFMode() { return ctfMode; }
     public int getCTFTargetScore() { return ctfTargetScore; }
     public int getVillagerHealth() { return villagerHealth; }

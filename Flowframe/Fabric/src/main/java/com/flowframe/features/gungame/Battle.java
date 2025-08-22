@@ -15,10 +15,13 @@ import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.scoreboard.Team;
 import net.minecraft.scoreboard.AbstractTeam;
 import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.attribute.EntityAttributeModifier;
+import net.minecraft.entity.attribute.EntityAttributeInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import com.flowframe.features.chatformat.TablistUtil;
 import com.flowframe.features.gungame.DeathTrackingUtil;
+import com.flowframe.FlowframeMod;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -52,6 +55,22 @@ public class Battle {
     private BattleMode battleMode = BattleMode.ELIMINATION; // Current battle mode
     private CaptureTheFlagManager ctfManager; // CTF manager for CTF mode
     private VillagerDefenseManager villagerDefenseManager; // Villager Defense manager
+    
+    // Health enforcement system
+    private static final double BATTLE_BASE_HEALTH = 20.0;
+    private static final UUID BATTLE_HEALTH_MODIFIER_ID = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+    private final Map<UUID, Float> originalMaxHealth = new HashMap<>();
+    
+    // Speed enforcement system
+    private static final double BATTLE_BASE_SPEED = 0.1; // Default player movement speed
+    private static final UUID BATTLE_SPEED_MODIFIER_ID = UUID.fromString("550e8400-e29b-41d4-a716-446655440001");
+    private final Map<UUID, Double> originalSpeed = new HashMap<>();
+    
+    // Jump boost enforcement system (using status effects)
+    private static final int BATTLE_BASE_JUMP_BOOST = 0; // Default jump boost level
+    private final Map<UUID, Integer> originalJumpBoost = new HashMap<>();
+    
+    private ScheduledExecutorService healthEnforcementService;
     
     // Static storage for CTF bases that persist across battle restarts
     private static final Map<String, BlockPos> persistentCTFBases = new ConcurrentHashMap<>();
@@ -231,22 +250,24 @@ public class Battle {
         if (settings.isUniformSpeed() || settings.isUniformJumpBoost() || settings.isUniformAttributes()) {
             // Apply attributes to this specific player
             if (settings.isUniformSpeed()) {
-                player.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED).setBaseValue(0.1);
+                enforceUniformSpeed(player);
             }
             
             if (settings.isUniformJumpBoost()) {
                 player.removeStatusEffect(StatusEffects.JUMP_BOOST);
             }
             
+            // Apply health enforcement if either uniformAttributes or uniformHealth is enabled
+            if (settings.isUniformHealth() || settings.isUniformAttributes()) {
+                enforceUniformHealth(player);
+            }
+            
             if (settings.isUniformAttributes()) {
-                // Apply comprehensive attribute override
-                player.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH).setBaseValue(20.0);
+                // Apply comprehensive attribute override including aggressive health enforcement
+                enforceUniformHealth(player);
                 player.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_DAMAGE).setBaseValue(1.0);
                 player.getAttributeInstance(EntityAttributes.GENERIC_ATTACK_SPEED).setBaseValue(4.0);
                 player.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED).setBaseValue(0.1);
-                
-                // Set current health to match max health
-                player.setHealth(20.0f);
                 
                 // Clear all combat-affecting status effects
                 player.removeStatusEffect(StatusEffects.SPEED);
@@ -428,6 +449,17 @@ public class Battle {
                         }
                     }
                     
+                    // For Villager Defense mode, teleport to villager base if available
+                    if (battleMode == BattleMode.VILLAGER_DEFENSE && villagerDefenseManager != null) {
+                        BlockPos villagerBase = villagerDefenseManager.getVillagerBase(playerTeam.getName());
+                        if (villagerBase != null) {
+                            ServerWorld world = player.getServerWorld();
+                            player.teleport(world, villagerBase.getX() + 0.5, villagerBase.getY() + 1.0, 
+                                villagerBase.getZ() + 0.5, player.getYaw(), player.getPitch());
+                            continue; // Skip battle spawn teleport
+                        }
+                    }
+                    
                     // Fallback to battle spawn point for other game modes or if no base set
                     if (gameSpawnPoint != null) {
                         ServerWorld world = player.getServerWorld();
@@ -462,10 +494,27 @@ public class Battle {
         state = BattleState.ACTIVE;
         pvpEnabled = true;
         
+        // Remove villager protection when PvP starts
+        if (battleMode == BattleMode.VILLAGER_DEFENSE && villagerDefenseManager != null) {
+            villagerDefenseManager.setVillagerProtection(false);
+        }
+        
         // Apply uniform attributes if any are enabled
         BattleSettings settings = BattleSettings.getInstance();
         if (settings.isUniformSpeed() || settings.isUniformJumpBoost() || settings.isUniformAttributes()) {
             applyUniformAttributes();
+        }
+        
+        // Start aggressive health and speed enforcement
+        if (settings.isUniformHealth() || settings.isUniformSpeed() || settings.isUniformAttributes()) {
+            enforceUniformHealthAll();
+            enforceUniformSpeedAll();
+            startAttributeEnforcement();
+        }
+        
+        // Enforce health if uniform health is enabled
+        if (settings.isUniformHealth()) {
+            enforceUniformHealthAll();
         }
         
         // Start CTF timer if in CTF mode and ensure particles are active
@@ -478,6 +527,8 @@ public class Battle {
         // Start Villager Defense timer if in Villager Defense mode
         if (battleMode == BattleMode.VILLAGER_DEFENSE && villagerDefenseManager != null) {
             villagerDefenseManager.startTimedRound();
+            // Protect villagers during grace period
+            villagerDefenseManager.setVillagerProtection(true);
         }
         
         // Notify all players that PvP is now active
@@ -529,41 +580,47 @@ public class Battle {
     public void endGame(BattleTeam winningTeam) {
         state = BattleState.ENDING;
         
-        // Announce winner
-        if (winningTeam != null) {
-            Text winMessage = Text.literal("Team ")
-                .append(Text.literal(winningTeam.getDisplayName()).formatted(winningTeam.getFormatting()))
-                .append(Text.literal(" wins round " + currentRound + "!"))
-                .formatted(Formatting.GOLD, Formatting.BOLD);
-            
-            // Create a more centered title message with manual spacing
-            Text titleMessage = Text.literal("")
-                .append(Text.literal(winningTeam.getDisplayName()).formatted(winningTeam.getFormatting()))
-                .append(Text.literal(" Wins!"))
-                .formatted(Formatting.GOLD, Formatting.BOLD);
-            
-            broadcastToAll(winMessage);
-            
-            // Show title to all game participants
-            for (UUID playerId : playerTeams.keySet()) {
-                ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
-                if (player != null) {
-                    player.networkHandler.sendPacket(new ClearTitleS2CPacket(false));
-                    player.networkHandler.sendPacket(new TitleS2CPacket(titleMessage));
-                }
-            }
-        } else {
-            broadcastToAll(Text.literal("Round " + currentRound + " ended in a draw!").formatted(Formatting.YELLOW));
-        }
+        // Stop aggressive health and speed enforcement
+        stopAttributeEnforcement();
         
-        // Check if we should continue to next round or end the game
-        if (currentRound < totalRounds) {
-            // Wait 3 seconds then start next round
-            scheduler.schedule(this::startNextRound, 3000L, TimeUnit.MILLISECONDS);
-        } else {
-            // All rounds complete - wait for next game
-            scheduler.schedule(this::completeBattleSeries, 3000L, TimeUnit.MILLISECONDS);
-        }
+        // Add a small delay to ensure enforcement is completely stopped before restoration
+        scheduler.schedule(() -> {
+            // Announce winner
+            if (winningTeam != null) {
+                Text winMessage = Text.literal("Team ")
+                    .append(Text.literal(winningTeam.getDisplayName()).formatted(winningTeam.getFormatting()))
+                    .append(Text.literal(" wins round " + currentRound + "!"))
+                    .formatted(Formatting.GOLD, Formatting.BOLD);
+                
+                // Create a more centered title message with manual spacing
+                Text titleMessage = Text.literal("")
+                    .append(Text.literal(winningTeam.getDisplayName()).formatted(winningTeam.getFormatting()))
+                    .append(Text.literal(" Wins!"))
+                    .formatted(Formatting.GOLD, Formatting.BOLD);
+                
+                broadcastToAll(winMessage);
+            
+                // Show title to all game participants
+                for (UUID playerId : playerTeams.keySet()) {
+                    ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+                    if (player != null) {
+                        player.networkHandler.sendPacket(new ClearTitleS2CPacket(false));
+                        player.networkHandler.sendPacket(new TitleS2CPacket(titleMessage));
+                    }
+                }
+            } else {
+                broadcastToAll(Text.literal("Round " + currentRound + " ended in a draw!").formatted(Formatting.YELLOW));
+            }
+            
+            // Check if we should continue to next round or end the game
+            if (currentRound < totalRounds) {
+                // Wait 3 seconds then start next round
+                scheduler.schedule(this::startNextRound, 3000L, TimeUnit.MILLISECONDS);
+            } else {
+                // All rounds complete - wait for next game
+                scheduler.schedule(this::completeBattleSeries, 3000L, TimeUnit.MILLISECONDS);
+            }
+        }, 500L, TimeUnit.MILLISECONDS); // 500ms delay to ensure enforcement service is stopped
     }
     
     private void completeBattleSeries() {
@@ -614,6 +671,9 @@ public class Battle {
     }
     
     private void resetAllPlayers() {
+        // Stop aggressive health and speed enforcement FIRST
+        stopAttributeEnforcement();
+        
         // Teleport all players back to their original positions and reset game modes
         for (UUID playerId : playerTeams.keySet()) {
             ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
@@ -635,8 +695,16 @@ public class Battle {
                         gameSpawnPoint.getZ() + 0.5, player.getYaw(), player.getPitch());
                 }
                 
-                // Reset player speed to default
-                resetSinglePlayerSpeed(player);
+                // Reset player speed to original (with retry logic)
+                restoreOriginalSpeed(player);
+                // Force another speed restoration after a small delay
+                scheduler.schedule(() -> restoreOriginalSpeed(player), 100L, TimeUnit.MILLISECONDS);
+                
+                // Restore original health
+                restoreOriginalHealth(player);
+                
+                // Restore original jump boost
+                restoreOriginalJumpBoost(player);
                 
                 // Clear titles
                 player.networkHandler.sendPacket(new ClearTitleS2CPacket(true));
@@ -654,6 +722,9 @@ public class Battle {
         spectators.clear();
         originalGameModes.clear();
         originalPositions.clear();
+        originalMaxHealth.clear(); // Clear health tracking
+        originalSpeed.clear(); // Clear speed tracking
+        originalJumpBoost.clear(); // Clear jump boost tracking
         gameSpawnPoint = null;
         resetColorAssignments();
         
@@ -727,6 +798,15 @@ public class Battle {
                     originalPos.getZ() + 0.5, player.getYaw(), player.getPitch());
             }
             
+            // Reset player speed to original
+            restoreOriginalSpeed(player);
+            
+            // Restore original health
+            restoreOriginalHealth(player);
+            
+            // Restore original jump boost
+            restoreOriginalJumpBoost(player);
+            
             player.networkHandler.sendPacket(new ClearTitleS2CPacket(true));
             player.sendMessage(Text.literal("You have been kicked from the battle.")
                 .formatted(Formatting.RED), false);
@@ -735,6 +815,9 @@ public class Battle {
         // Clean up data
         originalGameModes.remove(playerId);
         originalPositions.remove(playerId);
+        originalMaxHealth.remove(playerId); // Clean up health tracking
+        originalSpeed.remove(playerId); // Clean up speed tracking
+        originalJumpBoost.remove(playerId); // Clean up jump boost tracking
         
         // Remove empty team
         if (team.isEmpty()) {
@@ -1036,8 +1119,14 @@ public class Battle {
                     originalPos.getZ() + 0.5, player.getYaw(), player.getPitch());
             }
             
-            // Reset player speed to default
-            resetSinglePlayerSpeed(player);
+            // Reset player speed to original
+            restoreOriginalSpeed(player);
+            
+            // Restore original health
+            restoreOriginalHealth(player);
+            
+            // Restore original jump boost
+            restoreOriginalJumpBoost(player);
             
             player.networkHandler.sendPacket(new ClearTitleS2CPacket(true));
             player.sendMessage(Text.literal("You have left the battle.")
@@ -1047,6 +1136,9 @@ public class Battle {
         // Clean up data
         originalGameModes.remove(playerId);
         originalPositions.remove(playerId);
+        originalMaxHealth.remove(playerId); // Clean up health tracking
+        originalSpeed.remove(playerId); // Clean up speed tracking
+        originalJumpBoost.remove(playerId); // Clean up jump boost tracking
         
         // Remove empty team
         if (team.isEmpty()) {
@@ -1128,6 +1220,13 @@ public class Battle {
     private void startNextRound() {
         currentRound++;
         state = BattleState.COUNTDOWN;
+        
+        // Reset game mode specific managers
+        if (battleMode == BattleMode.CAPTURE_THE_FLAG && ctfManager != null) {
+            ctfManager.reset();
+        } else if (battleMode == BattleMode.VILLAGER_DEFENSE && villagerDefenseManager != null) {
+            villagerDefenseManager.reset(); // This will respawn villagers at bases
+        }
         
         // Reset all players to survival mode and teleport to spawn
         for (UUID playerId : playerTeams.keySet()) {
@@ -1387,5 +1486,346 @@ public class Battle {
             default:
                 return gameSpawnPoint; // Default to game spawn for elimination mode
         }
+    }
+    
+    /**
+     * Aggressive enforcement of uniform speed for a single player
+     */
+    public void enforceUniformSpeed(ServerPlayerEntity player) {
+        try {
+            BattleSettings settings = BattleSettings.getInstance();
+            if (!settings.isUniformSpeed() && !settings.isUniformAttributes()) {
+                return;
+            }
+            
+            // Store original speed if not already stored
+            if (!originalSpeed.containsKey(player.getUuid())) {
+                EntityAttributeInstance speedAttribute = player.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED);
+                if (speedAttribute != null) {
+                    originalSpeed.put(player.getUuid(), speedAttribute.getBaseValue());
+                }
+            }
+            
+            // Get speed attribute
+            EntityAttributeInstance speedAttribute = player.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED);
+            if (speedAttribute != null) {
+                // Remove all existing speed modifiers except our battle one
+                List<EntityAttributeModifier> modifiers = new ArrayList<>(speedAttribute.getModifiers());
+                for (EntityAttributeModifier modifier : modifiers) {
+                    if (!modifier.getId().equals(BATTLE_SPEED_MODIFIER_ID)) {
+                        speedAttribute.removeModifier(modifier.getId());
+                    }
+                }
+                
+                // Set base value to default
+                speedAttribute.setBaseValue(BATTLE_BASE_SPEED);
+                
+                // Add our modifier to ensure it stays at default
+                boolean hasOurModifier = speedAttribute.getModifiers().stream()
+                    .anyMatch(mod -> mod.getId().equals(BATTLE_SPEED_MODIFIER_ID));
+                if (!hasOurModifier) {
+                    EntityAttributeModifier battleModifier = new EntityAttributeModifier(
+                        BATTLE_SPEED_MODIFIER_ID,
+                        "flowframe_battle_speed",
+                        0.0, // No additional modification, base value handles it
+                        EntityAttributeModifier.Operation.ADDITION
+                    );
+                    speedAttribute.addPersistentModifier(battleModifier);
+                }
+                
+                // Force speed to exactly the base value
+                player.setMovementSpeed((float) BATTLE_BASE_SPEED);
+                
+                // Remove speed-affecting status effects
+                player.removeStatusEffect(StatusEffects.SPEED);
+                player.removeStatusEffect(StatusEffects.SLOWNESS);
+            }
+            
+        } catch (Exception e) {
+            System.out.println("[FLOWFRAME] Failed to enforce uniform speed for player " + player.getName().getString() + ": " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Enforce uniform speed for all battle participants
+     */
+    public void enforceUniformSpeedAll() {
+        for (BattleTeam team : teams.values()) {
+            for (UUID playerId : team.getAllPlayers()) {
+                ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+                if (player != null) {
+                    enforceUniformSpeed(player);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Restore original speed for a single player
+     */
+    public void restoreOriginalSpeed(ServerPlayerEntity player) {
+        try {
+            EntityAttributeInstance speedAttribute = player.getAttributeInstance(EntityAttributes.GENERIC_MOVEMENT_SPEED);
+            if (speedAttribute != null) {
+                // Remove our battle modifier
+                speedAttribute.removeModifier(BATTLE_SPEED_MODIFIER_ID);
+                
+                // Restore original speed
+                Double originalSpeedValue = originalSpeed.get(player.getUuid());
+                if (originalSpeedValue != null) {
+                    speedAttribute.setBaseValue(originalSpeedValue);
+                } else {
+                    // Fallback to default
+                    speedAttribute.setBaseValue(BATTLE_BASE_SPEED);
+                }
+            }
+            
+        } catch (Exception e) {
+            System.out.println("[FLOWFRAME] Failed to restore original speed for player " + player.getName().getString() + ": " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Restore original speed for all battle participants
+     */
+    public void restoreOriginalSpeedAll() {
+        for (BattleTeam team : teams.values()) {
+            for (UUID playerId : team.getAllPlayers()) {
+                ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+                if (player != null) {
+                    restoreOriginalSpeed(player);
+                }
+            }
+        }
+    }
+
+    /**
+     * Aggressive enforcement of uniform jump boost for a single player (using status effects)
+     */
+    public void enforceUniformJumpBoost(ServerPlayerEntity player) {
+        try {
+            BattleSettings settings = BattleSettings.getInstance();
+            if (!settings.isUniformJumpBoost() && !settings.isUniformAttributes()) {
+                return;
+            }
+            
+            // Store original jump boost if not already stored
+            if (!originalJumpBoost.containsKey(player.getUuid())) {
+                StatusEffectInstance jumpEffect = player.getStatusEffect(StatusEffects.JUMP_BOOST);
+                int originalLevel = jumpEffect != null ? jumpEffect.getAmplifier() : -1; // -1 means no effect
+                originalJumpBoost.put(player.getUuid(), originalLevel);
+            }
+            
+            // Remove existing jump boost effect
+            player.removeStatusEffect(StatusEffects.JUMP_BOOST);
+            
+            // Apply battle jump boost level (0 means no jump boost)
+            if (BATTLE_BASE_JUMP_BOOST > 0) {
+                player.addStatusEffect(new StatusEffectInstance(StatusEffects.JUMP_BOOST, StatusEffectInstance.INFINITE, BATTLE_BASE_JUMP_BOOST - 1, false, false));
+            }
+            
+        } catch (Exception e) {
+            System.out.println("[FLOWFRAME] Failed to enforce uniform jump boost for player " + player.getName().getString() + ": " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Enforce uniform jump boost for all battle participants
+     */
+    public void enforceUniformJumpBoostAll() {
+        for (BattleTeam team : teams.values()) {
+            for (UUID playerId : team.getAllPlayers()) {
+                ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+                if (player != null) {
+                    enforceUniformJumpBoost(player);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Restore original jump boost for a single player (using status effects)
+     */
+    public void restoreOriginalJumpBoost(ServerPlayerEntity player) {
+        try {
+            // Remove current jump boost effect
+            player.removeStatusEffect(StatusEffects.JUMP_BOOST);
+            
+            // Restore original jump boost
+            Integer originalJumpLevel = originalJumpBoost.get(player.getUuid());
+            if (originalJumpLevel != null && originalJumpLevel >= 0) {
+                // Restore the original jump boost effect
+                player.addStatusEffect(new StatusEffectInstance(StatusEffects.JUMP_BOOST, StatusEffectInstance.INFINITE, originalJumpLevel, false, false));
+            }
+            // If originalJumpLevel is -1 or null, we don't add any effect (no jump boost)
+            
+        } catch (Exception e) {
+            System.out.println("[FLOWFRAME] Failed to restore original jump boost for player " + player.getName().getString() + ": " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Restore original jump boost for all provided players
+     */
+    public void restoreOriginalJumpBoostAll(Collection<ServerPlayerEntity> playersToRestore) {
+        for (ServerPlayerEntity player : playersToRestore) {
+            restoreOriginalJumpBoost(player);
+        }
+    }
+
+    /**
+     * Aggressively enforce uniform health for a specific player
+     */
+    public void enforceUniformHealth(ServerPlayerEntity player) {
+        BattleSettings settings = BattleSettings.getInstance();
+        if (!settings.isUniformHealth() && !settings.isUniformAttributes()) {
+            return;
+        }
+        
+        try {
+            // Store original health if not already stored
+            if (!originalMaxHealth.containsKey(player.getUuid())) {
+                originalMaxHealth.put(player.getUuid(), player.getMaxHealth());
+            }
+            
+            // Remove all existing health modifiers
+            EntityAttributeInstance healthAttribute = player.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
+            if (healthAttribute != null) {
+                // Remove all modifiers except our battle modifier
+                List<EntityAttributeModifier> modifiers = new ArrayList<>(healthAttribute.getModifiers());
+                for (EntityAttributeModifier modifier : modifiers) {
+                    if (!modifier.getId().equals(BATTLE_HEALTH_MODIFIER_ID)) {
+                        healthAttribute.removeModifier(modifier.getId());
+                    }
+                }
+                
+                // Set base value to 20
+                healthAttribute.setBaseValue(BATTLE_BASE_HEALTH);
+                
+                // Add our modifier to ensure it stays at 20
+                boolean hasOurModifier = healthAttribute.getModifiers().stream()
+                    .anyMatch(mod -> mod.getId().equals(BATTLE_HEALTH_MODIFIER_ID));
+                if (!hasOurModifier) {
+                    EntityAttributeModifier battleModifier = new EntityAttributeModifier(
+                        BATTLE_HEALTH_MODIFIER_ID,
+                        "flowframe_battle_health",
+                        0.0, // No additional modification, base value handles it
+                        EntityAttributeModifier.Operation.ADDITION
+                    );
+                    healthAttribute.addPersistentModifier(battleModifier);
+                }
+            }
+            
+            // Force current health to 20
+            player.setHealth(20.0f);
+            
+            // Remove any health-affecting status effects
+            player.removeStatusEffect(StatusEffects.HEALTH_BOOST);
+            player.removeStatusEffect(StatusEffects.ABSORPTION);
+            player.removeStatusEffect(StatusEffects.WITHER);
+            player.removeStatusEffect(StatusEffects.POISON);
+            player.removeStatusEffect(StatusEffects.INSTANT_HEALTH);
+            player.removeStatusEffect(StatusEffects.INSTANT_DAMAGE);
+            
+        } catch (Exception e) {
+            System.out.println("[FLOWFRAME] Failed to enforce uniform health for player " + player.getName().getString() + ": " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Enforce uniform health for all battle participants
+     */
+    public void enforceUniformHealthAll() {
+        for (BattleTeam team : teams.values()) {
+            for (UUID playerId : team.getAllPlayers()) {
+                ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+                if (player != null) {
+                    enforceUniformHealth(player);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Restore original health for a specific player
+     */
+    public void restoreOriginalHealth(ServerPlayerEntity player) {
+        try {
+            EntityAttributeInstance healthAttribute = player.getAttributeInstance(EntityAttributes.GENERIC_MAX_HEALTH);
+            if (healthAttribute != null) {
+                // Remove our battle modifier
+                healthAttribute.removeModifier(BATTLE_HEALTH_MODIFIER_ID);
+                
+                // Restore original max health if we have it stored
+                Float originalHealth = originalMaxHealth.get(player.getUuid());
+                if (originalHealth != null) {
+                    healthAttribute.setBaseValue(originalHealth);
+                    // Set current health to not exceed the restored max
+                    player.setHealth(Math.min(player.getHealth(), originalHealth.floatValue()));
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("[FLOWFRAME] Failed to restore original health for player " + player.getName().getString() + ": " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Restore original health for all battle participants
+     */
+    public void restoreOriginalHealthAll() {
+        for (BattleTeam team : teams.values()) {
+            for (UUID playerId : team.getAllPlayers()) {
+                ServerPlayerEntity player = server.getPlayerManager().getPlayer(playerId);
+                if (player != null) {
+                    restoreOriginalHealth(player);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Check if a player is currently in a battle
+     */
+    /**
+     * Start aggressive attribute enforcement (health and speed)
+     */
+    private void startAttributeEnforcement() {
+        if (healthEnforcementService == null || healthEnforcementService.isShutdown()) {
+            healthEnforcementService = Executors.newSingleThreadScheduledExecutor();
+            healthEnforcementService.scheduleAtFixedRate(() -> {
+                BattleSettings settings = BattleSettings.getInstance();
+                if (settings.isUniformHealth() || settings.isUniformAttributes()) {
+                    enforceUniformHealthAll();
+                }
+                if (settings.isUniformSpeed() || settings.isUniformAttributes()) {
+                    enforceUniformSpeedAll();
+                }
+                if (settings.isUniformJumpBoost() || settings.isUniformAttributes()) {
+                    enforceUniformJumpBoostAll();
+                }
+            }, 0, 500, TimeUnit.MILLISECONDS); // Run every 500ms for aggressive enforcement
+            System.out.println("[FLOWFRAME] Started aggressive health, speed, and jump boost enforcement (every 500ms)");
+        }
+    }
+    
+    /**
+     * Stop aggressive attribute enforcement
+     */
+    private void stopAttributeEnforcement() {
+        if (healthEnforcementService != null && !healthEnforcementService.isShutdown()) {
+            healthEnforcementService.shutdown();
+            try {
+                if (!healthEnforcementService.awaitTermination(1, TimeUnit.SECONDS)) {
+                    healthEnforcementService.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                healthEnforcementService.shutdownNow();
+            }
+            System.out.println("[FLOWFRAME] Stopped aggressive health, speed, and jump boost enforcement");
+        }
+    }
+
+    public boolean isPlayerInBattle(ServerPlayerEntity player) {
+        return playerTeams.containsKey(player.getUuid()) && state != BattleState.INACTIVE;
     }
 }

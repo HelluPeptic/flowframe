@@ -6,6 +6,7 @@ import com.flowframe.features.gungame.DeathTrackingUtil;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.damage.DamageSource;
+import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
@@ -22,7 +23,29 @@ public abstract class MixinLivingEntity_BattlePvp {
     
     @Inject(method = "damage", at = @At("HEAD"), cancellable = true)
     private void onBattleDamage(DamageSource source, float amount, CallbackInfoReturnable<Boolean> cir) {
-        // Only handle ServerPlayerEntity instances
+        // Handle VillagerEntity damage in villager defense mode
+        if ((Object)this instanceof VillagerEntity) {
+            VillagerEntity villager = (VillagerEntity) (Object) this;
+            
+            // Check if there's an active battle with villager defense
+            Battle activeBattle = Battle.getInstance();
+            if (activeBattle != null && activeBattle.getBattleMode() == com.flowframe.features.gungame.BattleMode.VILLAGER_DEFENSE) {
+                com.flowframe.features.gungame.VillagerDefenseManager villagerManager = activeBattle.getVillagerDefenseManager();
+                if (villagerManager != null && villagerManager.shouldPreventVillagerDamage(villager)) {
+                    // Cancel the damage during grace period
+                    cir.setReturnValue(false);
+                    return;
+                }
+                
+                // If damage is allowed, notify the manager for tracking
+                if (villagerManager != null && villagerManager.isTeamVillager(villager)) {
+                    villagerManager.onVillagerDamaged(villager, source, amount);
+                }
+            }
+            return; // Don't process further for villagers
+        }
+        
+        // Only handle ServerPlayerEntity instances for battle PvP
         if (!((Object)this instanceof ServerPlayerEntity)) {
             return;
         }
@@ -105,9 +128,11 @@ public abstract class MixinLivingEntity_BattlePvp {
         BattleTeam team = battle.getPlayerTeam(playerId);
         if (team == null) return;
         
-        // Handle differently for CTF vs Elimination modes
+        // Handle differently for CTF vs Villager Defense vs Elimination modes
         if (battle.getBattleMode() == com.flowframe.features.gungame.BattleMode.CAPTURE_THE_FLAG) {
             handleCTFDeath(player, battle, team);
+        } else if (battle.getBattleMode() == com.flowframe.features.gungame.BattleMode.VILLAGER_DEFENSE) {
+            handleVillagerDefenseDeath(player, battle, team);
         } else {
             handleEliminationDeath(player, battle, team);
         }
@@ -130,6 +155,44 @@ public abstract class MixinLivingEntity_BattlePvp {
         
         // Don't heal immediately - let the CTF manager handle respawn timing
         // The CTF manager will put player in spectator mode and respawn them after delay
+    }
+    
+    private void handleVillagerDefenseDeath(ServerPlayerEntity player, Battle battle, BattleTeam team) {
+        java.util.UUID playerId = player.getUuid();
+        
+        // Check if the team has a living villager
+        com.flowframe.features.gungame.VillagerDefenseManager villagerManager = battle.getVillagerDefenseManager();
+        if (villagerManager != null && villagerManager.hasLivingVillager(team.getName())) {
+            // Team has a villager - respawn the player at villager base immediately
+            BlockPos villagerBase = villagerManager.getVillagerBase(team.getName());
+            if (villagerBase != null) {
+                ServerWorld world = player.getServerWorld();
+                player.teleport(world, villagerBase.getX() + 0.5, villagerBase.getY() + 1.0, villagerBase.getZ() + 0.5, 0.0f, 0.0f);
+                player.changeGameMode(GameMode.SURVIVAL);
+                player.setHealth(player.getMaxHealth());
+                
+                player.sendMessage(Text.literal("You have respawned at your villager!").formatted(Formatting.GREEN), false);
+                return; // Don't eliminate the player, they respawned
+            }
+        } else {
+            // Team has no villager - player is eliminated permanently
+            team.eliminatePlayer(playerId);
+            battle.getSpectators().add(playerId);
+            
+            player.changeGameMode(GameMode.SPECTATOR);
+            player.setHealth(player.getMaxHealth());
+            
+            // Send elimination message
+            player.sendMessage(Text.literal("You have been eliminated! Your team's villager is dead so you cannot respawn.").formatted(Formatting.RED), false);
+            
+            // Broadcast elimination
+            battle.broadcastToGamePlayers(Text.literal("Team ")
+                .append(Text.literal(team.getDisplayName()).formatted(team.getFormatting()))
+                .append(Text.literal(" player " + player.getName().getString() + " has been eliminated!")).formatted(Formatting.GRAY));
+        }
+        
+        // CRITICAL: Refresh team color to prevent white nametag bug
+        battle.refreshPlayerTeamColor(player, team);
     }
     
     private void handleEliminationDeath(ServerPlayerEntity player, Battle battle, BattleTeam team) {
