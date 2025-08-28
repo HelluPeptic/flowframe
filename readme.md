@@ -239,7 +239,6 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
   - `flowframe.command.orelog`
   - `flowframe.feature.oreannouncements`
   - `flowframe.command.endtoggle`
-  - `flowframe.groupcolor.&a` (for green tablist name)
   - `flowframe.command.levitate`
   - `flowframe.command.setaircraftpilotlimit`
   - `flowframe.command.linked`
@@ -257,10 +256,40 @@ Flowframe is a Minecraft mod for Fabric that adds quality-of-life and server man
   - `flowframe.command.minetracer.inspect`
   - `flowframe.command.minetracer.page`
   - `flowframe.feature.armsworkbench`
-  - `flowframe.command.battle.boot`
-  - `flowframe.command.ctf.setbase` (requires team leader status)
-  - `flowframe.command.ctf.status`
-  - `flowframe.command.ctf.bases`
+
+### Color System (Chat & Tablist)
+
+The mod supports colored player names in chat and tablist through LuckPerms integration:
+
+**Method 1: Permission-Based Colors**
+Grant specific color permissions to players:
+
+- `flowframe.groupcolor.&0` (black)
+- `flowframe.groupcolor.&1` (dark blue)
+- `flowframe.groupcolor.&2` (dark green)
+- `flowframe.groupcolor.&3` (dark aqua)
+- `flowframe.groupcolor.&4` (dark red)
+- `flowframe.groupcolor.&5` (dark purple)
+- `flowframe.groupcolor.&6` (gold)
+- `flowframe.groupcolor.&7` (gray)
+- `flowframe.groupcolor.&8` (dark gray)
+- `flowframe.groupcolor.&9` (blue)
+- `flowframe.groupcolor.&a` (green)
+- `flowframe.groupcolor.&b` (aqua)
+- `flowframe.groupcolor.&c` (red)
+- `flowframe.groupcolor.&d` (light purple)
+- `flowframe.groupcolor.&e` (yellow)
+- `flowframe.groupcolor.&f` (white)
+
+**Method 2: LuckPerms Prefix Colors**
+The mod automatically extracts colors from LuckPerms prefixes (e.g., `§4[Admin] ` will make the player's name red)
+
+**Priority:**
+
+1. Permission-based colors (highest priority)
+2. LuckPerms prefix colors
+3. Gold for operators
+4. White for regular players
 
 ---
 

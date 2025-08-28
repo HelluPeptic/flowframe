@@ -21,9 +21,7 @@
     "MixinRecipeManager_MapRemoval",
     "MixinLivingEntity_TipsyDuration",
     "MixinPotionItem",
-    "MixinArmsWorkbenchBlocker",
-    "MixinLivingEntity_BattlePvp",
-    "MixinPlayerManager_BattleChat"
+    "MixinArmsWorkbenchBlocker"
   ],
   "client": [],
   "server": [],

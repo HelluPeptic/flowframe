@@ -35,7 +35,6 @@ import com.flowframe.features.levitate.LevitateCommandFeature;
 import com.flowframe.features.inventoryrestore.InventoryRestoreFeature;
 import com.flowframe.features.countentities.CountEntitiesCommand;
 import com.flowframe.features.gamerules.GameRulesFeature;
-import com.flowframe.features.gungame.BattleFeature;
 import com.flowframe.features.restartwarning.RestartWarningFeature;
 import com.flowframe.features.mapremoval.MapRemovalFeature;
 
@@ -60,7 +59,6 @@ public class FlowframeMod implements ModInitializer {
         InventoryRestoreFeature.register();
         CountEntitiesCommand.register();
         GameRulesFeature.register();
-        BattleFeature.register();
         RestartWarningFeature.register();
         MapRemovalFeature.register();
         BlockDuplicationFix.register();

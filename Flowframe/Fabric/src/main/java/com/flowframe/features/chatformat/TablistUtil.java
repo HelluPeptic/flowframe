@@ -1,8 +1,5 @@
 package com.flowframe.features.chatformat;
 
-import com.flowframe.features.gungame.Battle;
-import com.flowframe.features.gungame.BattleTeam;
-import com.flowframe.features.gungame.BattleMode;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;
 import net.luckperms.api.model.user.User;
@@ -14,18 +11,21 @@ import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import java.util.EnumSet;
-import java.util.Collections;
+
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class TablistUtil {
     private static int tablistUpdateTick = 0;
-
+    private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    
     public static void updateTablistForAll(MinecraftServer server) {
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             updateTablistForPlayer(player, server);
         }
     }
-
+    
     public static void updateTablistForPlayer(ServerPlayerEntity player, MinecraftServer server) {
         // Get LuckPerms prefix
         String prefix = "";
@@ -39,16 +39,19 @@ public class TablistUtil {
                     prefix = lpPrefix.replace('&', '§');
                 }
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable e) {
+            // LuckPerms not available or error occurred
+        }
+        
         String displayName = prefix + player.getName().getString();
         Text tablistName = Text.literal(displayName);
-
+        
         int online = server.getPlayerManager().getCurrentPlayerCount();
         // Add +1 to include yourself in the count if not already included
         // Vanilla getCurrentPlayerCount() does not include the player for whom the header is being set
         Text header = Text.literal("")
             .append(Text.literal("FlowSMP").styled(style -> style.withColor(Formatting.AQUA).withBold(true)))
-            .append(Text.literal("\n" + player.getName().getString()).styled(style -> style.withColor(Formatting.WHITE)))
+            .append(Text.literal("\n" + displayName).styled(style -> style.withColor(Formatting.WHITE)))
             .append(Text.literal("\nOnline players: " + online).styled(style -> style.withColor(Formatting.GRAY)))
             .append(Text.literal("\n "));
         int ping = player.pingMilliseconds;
@@ -73,28 +76,97 @@ public class TablistUtil {
                     prefix = lpPrefix.replace('&', '§');
                 }
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable e) {
+            // LuckPerms not available or error occurred
+        }
         
-        // Check if player is in a battle and add team prefix
-        Battle game = Battle.getInstance();
-        String teamPrefix = "";
-        if (game.isPlayerInGame(player.getUuid())) {
-            BattleTeam team = game.getPlayerTeam(player.getUuid());
-            if (team != null) {
-                String teamName = team.getDisplayName();
-                
-                // Check if this is CTF mode and player is team leader
-                if (game.getBattleMode() == BattleMode.CAPTURE_THE_FLAG && team.isTeamLeader(player.getUuid())) {
-                    teamName = teamName + " Leader";
+        // Build the text with proper formatting by parsing color codes
+        if (!prefix.isEmpty()) {
+            // Parse the prefix for color codes and build styled text
+            Text prefixText = parseColoredText(prefix);
+            Text nameText = Text.literal(player.getName().getString()).styled(style -> 
+                style.withColor(GroupColorUtil.getPlayerGroupTextColor(player))
+            );
+            return prefixText.copy().append(nameText);
+        } else {
+            // No prefix, just use player name with group color
+            return Text.literal(player.getName().getString()).styled(style -> 
+                style.withColor(GroupColorUtil.getPlayerGroupTextColor(player))
+            );
+        }
+    }
+    
+    // Helper method to parse color codes in text
+    private static Text parseColoredText(String text) {
+        if (text == null || text.isEmpty()) {
+            return Text.literal("");
+        }
+        
+        Text result = Text.literal("");
+        StringBuilder current = new StringBuilder();
+        
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '§' && i + 1 < text.length()) {
+                // Add current text if any
+                if (current.length() > 0) {
+                    result = result.copy().append(Text.literal(current.toString()));
+                    current = new StringBuilder();
                 }
                 
-                // Create team prefix with color
-                teamPrefix = "§" + getFormattingCode(team.getFormatting()) + "[" + teamName + "] §r";
+                // Get color code
+                char colorCode = text.charAt(i + 1);
+                Formatting formatting = getFormattingFromColorCode(colorCode);
+                
+                // Find the end of this colored segment
+                int nextColor = text.indexOf('§', i + 2);
+                if (nextColor == -1) nextColor = text.length();
+                
+                String coloredText = text.substring(i + 2, nextColor);
+                if (!coloredText.isEmpty()) {
+                    result = result.copy().append(Text.literal(coloredText).formatted(formatting));
+                }
+                
+                i = nextColor - 1; // Skip to next color code (or end)
+            } else if (c != '§') {
+                current.append(c);
             }
         }
         
-        String displayName = teamPrefix + prefix + player.getName().getString();
-        return Text.literal(displayName);
+        // Add any remaining text
+        if (current.length() > 0) {
+            result = result.copy().append(Text.literal(current.toString()));
+        }
+        
+        return result;
+    }
+    
+    // Helper method to convert color code to Formatting
+    private static Formatting getFormattingFromColorCode(char code) {
+        return switch (Character.toLowerCase(code)) {
+            case '0' -> Formatting.BLACK;
+            case '1' -> Formatting.DARK_BLUE;
+            case '2' -> Formatting.DARK_GREEN;
+            case '3' -> Formatting.DARK_AQUA;
+            case '4' -> Formatting.DARK_RED;
+            case '5' -> Formatting.DARK_PURPLE;
+            case '6' -> Formatting.GOLD;
+            case '7' -> Formatting.GRAY;
+            case '8' -> Formatting.DARK_GRAY;
+            case '9' -> Formatting.BLUE;
+            case 'a' -> Formatting.GREEN;
+            case 'b' -> Formatting.AQUA;
+            case 'c' -> Formatting.RED;
+            case 'd' -> Formatting.LIGHT_PURPLE;
+            case 'e' -> Formatting.YELLOW;
+            case 'f' -> Formatting.WHITE;
+            case 'l' -> Formatting.BOLD;
+            case 'm' -> Formatting.STRIKETHROUGH;
+            case 'n' -> Formatting.UNDERLINE;
+            case 'o' -> Formatting.ITALIC;
+            case 'r' -> Formatting.RESET;
+            default -> Formatting.WHITE;
+        };
     }
     
     // Helper method to convert Formatting to color code
@@ -122,18 +194,6 @@ public class TablistUtil {
 
     public static void updateTablistDisplayNamesForAll(MinecraftServer server) {
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            server.getPlayerManager().sendToAll(new PlayerListS2CPacket(PlayerListS2CPacket.Action.UPDATE_DISPLAY_NAME, player));
-        }
-    }
-
-    /**
-     * Clear team prefixes for all players by updating their tablist names
-     * Called when battles end to remove team color persistence
-     */
-    public static void clearTeamPrefixes(MinecraftServer server) {
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            // This will trigger getTablistName() which will see no active battle
-            // and return just the LuckPerms prefix without team colors
             server.getPlayerManager().sendToAll(new PlayerListS2CPacket(PlayerListS2CPacket.Action.UPDATE_DISPLAY_NAME, player));
         }
     }

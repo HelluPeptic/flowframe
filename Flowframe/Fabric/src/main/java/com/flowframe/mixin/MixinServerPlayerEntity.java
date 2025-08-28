@@ -102,22 +102,13 @@ public abstract class MixinServerPlayerEntity {
     private void onPlayerTick(CallbackInfo ci) {
         ServerPlayerEntity player = (ServerPlayerEntity) (Object) this;
         
-        // CTF movement handling
+        // Battle-related movement handling has been removed
+        // This mixin now only handles non-battle related player tick events
         try {
-            com.flowframe.features.gungame.Battle battle = com.flowframe.features.gungame.Battle.getInstance();
-            
-            // Only process if in CTF mode and battle is active
-            if (battle.getBattleMode() == com.flowframe.features.gungame.BattleMode.CAPTURE_THE_FLAG && 
-                battle.getState() == com.flowframe.features.gungame.Battle.BattleState.ACTIVE) {
                 
-                com.flowframe.features.gungame.CaptureTheFlagManager ctf = battle.getCTFManager();
-                if (ctf != null && battle.isPlayerInGame(player.getUuid())) {
-                    // Check for automatic flag interactions every 10ms (every 2 ticks at 20 TPS)
-                    if (player.age % 2 == 0) { // Check 10 times per second for responsiveness
-                        ctf.handlePlayerMovement(player);
-                    }
-                }
-            }
+            // Battle-related movement handling has been removed
+        // This mixin now only handles non-battle related player tick events
+        
         } catch (Exception e) {
             // Silently ignore errors to prevent issues with other features
         }
