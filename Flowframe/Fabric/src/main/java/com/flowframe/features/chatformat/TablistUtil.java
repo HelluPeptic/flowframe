@@ -15,18 +15,57 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.UUID;
 
 public class TablistUtil {
     private static int tablistUpdateTick = 0;
     private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     
+    // Simple storage for BattleCore team colors
+    private static final Map<UUID, Formatting> battleCoreColors = new HashMap<>();
+    
+    // Store server reference for tablist updates
+    private static MinecraftServer currentServer = null;
+    
+    // Method for BattleCore to set a player's team color
+    public static void setBattleCoreTeamColor(UUID playerUuid, Formatting color) {
+        battleCoreColors.put(playerUuid, color);
+        
+        // Trigger a tablist display name update for all players
+        if (currentServer != null) {
+            try {
+                updateTablistDisplayNamesForAll(currentServer);
+            } catch (Exception e) {
+                // Silently handle errors
+            }
+        }
+    }
+    
+    // Method for BattleCore to remove a player's team color
+    public static void removeBattleCoreTeamColor(UUID playerUuid) {
+        battleCoreColors.remove(playerUuid);
+        
+        // Trigger a tablist display name update for all players
+        if (currentServer != null) {
+            try {
+                updateTablistDisplayNamesForAll(currentServer);
+            } catch (Exception e) {
+                // Silently handle errors
+            }
+        }
+    }
+    
     public static void updateTablistForAll(MinecraftServer server) {
+        currentServer = server; // Store server reference
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             updateTablistForPlayer(player, server);
         }
     }
     
     public static void updateTablistForPlayer(ServerPlayerEntity player, MinecraftServer server) {
+        currentServer = server; // Store server reference
         // Get LuckPerms prefix
         String prefix = "";
         try {
@@ -80,20 +119,26 @@ public class TablistUtil {
             // LuckPerms not available or error occurred
         }
         
+        // Check if BattleCore has set a color for this player first
+        Formatting playerColor = battleCoreColors.get(player.getUuid());
+        if (playerColor == null) {
+            // Fall back to GroupColorUtil
+            playerColor = GroupColorUtil.getPlayerGroupColor(player);
+        }
+        
         // Build the text with proper formatting by parsing color codes
+        Text result;
         if (!prefix.isEmpty()) {
             // Parse the prefix for color codes and build styled text
             Text prefixText = parseColoredText(prefix);
-            Text nameText = Text.literal(player.getName().getString()).styled(style -> 
-                style.withColor(GroupColorUtil.getPlayerGroupTextColor(player))
-            );
-            return prefixText.copy().append(nameText);
+            Text nameText = Text.literal(player.getName().getString()).formatted(playerColor);
+            result = prefixText.copy().append(nameText);
         } else {
-            // No prefix, just use player name with group color
-            return Text.literal(player.getName().getString()).styled(style -> 
-                style.withColor(GroupColorUtil.getPlayerGroupTextColor(player))
-            );
+            // No LuckPerms prefix, just use player name with color
+            result = Text.literal(player.getName().getString()).formatted(playerColor);
         }
+        
+        return result;
     }
     
     // Helper method to parse color codes in text

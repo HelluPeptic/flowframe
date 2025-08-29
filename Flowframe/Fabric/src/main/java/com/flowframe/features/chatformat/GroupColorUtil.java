@@ -13,6 +13,12 @@ import me.lucko.fabric.api.permissions.v0.Permissions;
 public class GroupColorUtil {
     // Returns the Formatting color for the player based on LuckPerms permission
     public static Formatting getPlayerGroupColor(ServerPlayerEntity player) {
+        // FIRST: Check for BattleCore team colors (highest priority)
+        Formatting battleTeamColor = getBattleTeamColor(player);
+        if (battleTeamColor != null) {
+            return battleTeamColor;
+        }
+        
         ServerCommandSource source = player.getCommandSource();
         
         // Check for all standard Minecraft color codes (&0-&f) in priority order
@@ -121,5 +127,60 @@ public class GroupColorUtil {
         Formatting formatting = getPlayerGroupColor(player);
         // getCode() returns a char, not a String, and never null
         return "§" + formatting.getCode();
+    }
+    
+    // Helper method to check for BattleCore team colors
+    private static Formatting getBattleTeamColor(ServerPlayerEntity player) {
+        try {
+            // First check if BattleCore has set a color directly via the TablistUtil API
+            Formatting directColor = getBattleCoreColorFromTablistUtil(player);
+            if (directColor != null) {
+                return directColor;
+            }
+            
+            // Check if player is on a BattleCore team by looking at scoreboard teams
+            net.minecraft.scoreboard.Team team = player.getScoreboard().getPlayerTeam(player.getEntityName());
+            if (team != null && team.getName().startsWith("battlecore_")) {
+                // Extract team color from the team name and return the corresponding formatting
+                String teamName = team.getName().replace("battlecore_", "");
+                Formatting color = switch (teamName.toLowerCase()) {
+                    case "red" -> Formatting.RED;
+                    case "blue" -> Formatting.BLUE;
+                    case "green" -> Formatting.GREEN;
+                    case "yellow" -> Formatting.YELLOW;
+                    case "orange" -> Formatting.GOLD;
+                    case "pink" -> Formatting.LIGHT_PURPLE;
+                    case "purple" -> Formatting.DARK_PURPLE;
+                    case "aqua" -> Formatting.AQUA;
+                    case "lime" -> Formatting.GREEN;
+                    case "brown" -> Formatting.GOLD;
+                    case "magenta" -> Formatting.LIGHT_PURPLE;
+                    case "cyan" -> Formatting.DARK_AQUA;
+                    default -> null;
+                };
+                return color;
+            }
+        } catch (Exception e) {
+            // Silently handle errors
+        }
+        return null;
+    }
+    
+    // Helper method to get BattleCore color from TablistUtil's battleCoreColors map
+    private static Formatting getBattleCoreColorFromTablistUtil(ServerPlayerEntity player) {
+        try {
+            // Use reflection to access the private battleCoreColors map in TablistUtil
+            Class<?> tablistUtilClass = Class.forName("com.flowframe.features.chatformat.TablistUtil");
+            java.lang.reflect.Field battleCoreColorsField = tablistUtilClass.getDeclaredField("battleCoreColors");
+            battleCoreColorsField.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Map<java.util.UUID, Formatting> battleCoreColors = 
+                (java.util.Map<java.util.UUID, Formatting>) battleCoreColorsField.get(null);
+            
+            return battleCoreColors.get(player.getUuid());
+        } catch (Exception e) {
+            // This is fine - just means TablistUtil integration isn't available
+            return null;
+        }
     }
 }
