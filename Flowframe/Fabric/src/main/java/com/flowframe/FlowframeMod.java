@@ -52,14 +52,14 @@ public class FlowframeMod implements ModInitializer {
         EndToggleFeature.register();
         VersionCommand.register();
         GlAliasCommands.register();
-        TogglePvpFeature.register();
-        ObtainCardFeature.register();
+        // TogglePvpFeature.register(); // DISABLED
+        // ObtainCardFeature.register(); // DISABLED
         LinkedCommandFeature.register();
         LevitateCommandFeature.register();
         InventoryRestoreFeature.register();
         CountEntitiesCommand.register();
         GameRulesFeature.register();
-        RestartWarningFeature.register();
+        // RestartWarningFeature.register(); // DISABLED
         MapRemovalFeature.register();
         BlockDuplicationFix.register();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");

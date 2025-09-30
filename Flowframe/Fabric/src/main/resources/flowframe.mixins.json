@@ -15,13 +15,11 @@
     "MixinEndPortalBlock",
     "MixinChatFormat",
     "MixinServerWorld_NoNiftyCartsPlow",
-    "MixinLivingEntity_PvpToggle",
     "MixinLivingEntity_RemoveSpelunker",
     "MixinLivingEntity_PotionDuration_Fast",
     "MixinRecipeManager_MapRemoval",
     "MixinLivingEntity_TipsyDuration",
-    "MixinPotionItem",
-    "MixinArmsWorkbenchBlocker"
+    "MixinPotionItem"
   ],
   "client": [],
   "server": [],
