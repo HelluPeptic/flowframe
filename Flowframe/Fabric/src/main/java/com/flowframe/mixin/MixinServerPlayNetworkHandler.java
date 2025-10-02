@@ -53,7 +53,8 @@ public class MixinServerPlayNetworkHandler {
         )
     )
     private void redirectBroadcastOnDisconnect(PlayerManager manager, Text message, boolean overlay) {
-        // Do nothing - suppress vanilla leave message
+        // DISABLED: Allow vanilla leave messages through
+        manager.broadcast(message, overlay);
     }
 }
 

@@ -16,6 +16,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class MixinChatFormat {
     @Inject(method = "onChatMessage", at = @At("HEAD"), cancellable = true)
     private void onChatMessage(net.minecraft.network.packet.c2s.play.ChatMessageC2SPacket packet, org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci) {
+        // DISABLED: Custom chat formatting
+        /*
         net.minecraft.server.network.ServerPlayNetworkHandler handler = (net.minecraft.server.network.ServerPlayNetworkHandler) (Object) this;
         net.minecraft.server.network.ServerPlayerEntity player = handler.player;
         net.minecraft.server.MinecraftServer server = player.getServer();
@@ -41,5 +43,6 @@ public abstract class MixinChatFormat {
             com.flowframe.features.chatformat.TablistUtil.updateTablistForAll(server);
             ci.cancel();
         }
+        */
     }
 }

@@ -17,6 +17,7 @@ public class MixinPlayerManager_JoinMessage {
         )
     )
     private void redirectBroadcastJoin(PlayerManager manager, Text message, boolean overlay) {
-        // Do nothing - suppress vanilla join message
+        // DISABLED: Allow vanilla join messages through
+        manager.broadcast(message, overlay);
     }
 }

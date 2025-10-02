@@ -42,6 +42,9 @@ public class ChatFormatFeature {
             com.flowframe.features.chatformat.TablistUtil.updateTablistForPlayer(player, server);
             com.flowframe.features.chatformat.TablistUtil.updateTablistDisplayNamesForAll(server);
             TablistUtil.registerTablistAutoUpdate(server);
+            
+            // DISABLED: Custom join messages
+            /*
             Text msg;
             if (isNew) {
                 msg = Text.literal(playerName)
@@ -55,14 +58,19 @@ public class ChatFormatFeature {
                                 .styled(style -> style.withColor(TextColor.fromRgb(0xAAAAAA))));
             }
             server.getPlayerManager().broadcast(msg, false);
+            */
         });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
+            
+            // DISABLED: Custom leave messages
+            /*
             Text msg = Text.literal(player.getName().getString())
                     .styled(style -> style.withColor(TextColor.fromRgb(0x443e69)))
                     .append(Text.literal(" left the server.")
                             .styled(style -> style.withColor(TextColor.fromRgb(0xAAAAAA))));
             server.getPlayerManager().broadcast(msg, false);
+            */
         });
     }
 
