@@ -14,6 +14,7 @@ public class FlowframeConfig {
     
     // Configuration options
     public boolean enableMapRemoval = false; // Disabled by default
+    public boolean enableKeepInventory = false; // Disabled by default
     
     private FlowframeConfig() {}
     
@@ -75,5 +76,14 @@ public class FlowframeConfig {
     
     public boolean isMapRemovalEnabled() {
         return enableMapRemoval;
+    }
+    
+    public void setKeepInventoryEnabled(boolean enabled) {
+        this.enableKeepInventory = enabled;
+        saveConfig();
+    }
+    
+    public boolean isKeepInventoryEnabled() {
+        return enableKeepInventory;
     }
 }

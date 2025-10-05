@@ -35,7 +35,7 @@ public abstract class MixinServerPlayerEntity {
         // Note: Battle deaths are now handled in MixinLivingEntity_BattlePvp to prevent death screen
         // This method only handles keep inventory and player head drops
         
-        // Continue with keep inventory logic
+        // Continue with keep inventory logic (now using global config)
         boolean keepInv = KeepInventoryFeature.shouldKeepInventory(player);
         boolean killedByOwnArrow = false;
         // Check if the source is a projectile from the player (self-inflicted bow
@@ -88,6 +88,7 @@ public abstract class MixinServerPlayerEntity {
     @Inject(method = "copyFrom", at = @At("TAIL"))
     private void onCopyFrom(ServerPlayerEntity oldPlayer, boolean alive, CallbackInfo ci) {
         ServerPlayerEntity player = (ServerPlayerEntity) (Object) this;
+        // Only restore inventory if keep inventory is globally enabled
         if (KeepInventoryFeature.shouldKeepInventory(player)) {
             List<ItemStack> saved = savedInventories.remove(player.getUuid());
             if (saved != null) {
