@@ -14,6 +14,7 @@ public class FlowframeConfig {
     
     // Configuration options
     public boolean enableMapRemoval = false; // Disabled by default
+    public boolean enableTrashBagRemoval = false; // Disabled by default
     public boolean enableKeepInventory = false; // Disabled by default
     
     private FlowframeConfig() {}
@@ -76,6 +77,15 @@ public class FlowframeConfig {
     
     public boolean isMapRemovalEnabled() {
         return enableMapRemoval;
+    }
+    
+    public void setTrashBagRemovalEnabled(boolean enabled) {
+        this.enableTrashBagRemoval = enabled;
+        saveConfig();
+    }
+    
+    public boolean isTrashBagRemovalEnabled() {
+        return enableTrashBagRemoval;
     }
     
     public void setKeepInventoryEnabled(boolean enabled) {
