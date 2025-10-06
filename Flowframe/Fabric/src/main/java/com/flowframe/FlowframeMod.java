@@ -16,6 +16,7 @@ Flowframe Mod Features:
 
 import com.flowframe.features.chatformat.ChatFormatFeature;
 import com.flowframe.features.blockduplication.BlockDuplicationFix;
+import com.flowframe.features.spawner.SpawnerFeature;
 
 import net.fabricmc.api.ModInitializer;
 
@@ -62,6 +63,7 @@ public class FlowframeMod implements ModInitializer {
         // RestartWarningFeature.register(); // DISABLED
         MapRemovalFeature.register();
         BlockDuplicationFix.register();
+        SpawnerFeature.register();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }
