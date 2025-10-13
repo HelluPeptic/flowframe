@@ -3,8 +3,6 @@ subprojects {
     apply plugin: 'java'
     
     java.toolchain.languageVersion = JavaLanguageVersion.of(17)
-    //java.withSourcesJar()
-    //java.withJavadocJar()
     
     tasks.withType(Javadoc) {
         options.addStringOption('Xdoclint:none', '-quiet')

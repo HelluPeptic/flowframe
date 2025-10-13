@@ -52,8 +52,6 @@ dependencies {
     modImplementation "me.lucko:fabric-permissions-api:0.2-SNAPSHOT"
     // LuckPerms API for tablist prefixes
     modImplementation "net.luckperms:api:5.4"
-    // Already included above
-    // modImplementation files('libs/letsdo-furniture-fabric-1.0.4.jar')
 }
 
 loom {
