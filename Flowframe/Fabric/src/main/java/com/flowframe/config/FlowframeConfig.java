@@ -15,6 +15,7 @@ public class FlowframeConfig {
     // Configuration options
     public boolean enableMapRemoval = false; // Disabled by default
     public boolean enableTrashBagRemoval = false; // Disabled by default
+    public boolean enableBanglumNukeCoreRemoval = false; // Disabled by default
     public boolean enableKeepInventory = false; // Disabled by default
     
     private FlowframeConfig() {}
@@ -86,6 +87,15 @@ public class FlowframeConfig {
     
     public boolean isTrashBagRemovalEnabled() {
         return enableTrashBagRemoval;
+    }
+    
+    public void setBanglumNukeCoreRemovalEnabled(boolean enabled) {
+        this.enableBanglumNukeCoreRemoval = enabled;
+        saveConfig();
+    }
+    
+    public boolean isBanglumNukeCoreRemovalEnabled() {
+        return enableBanglumNukeCoreRemoval;
     }
     
     public void setKeepInventoryEnabled(boolean enabled) {
