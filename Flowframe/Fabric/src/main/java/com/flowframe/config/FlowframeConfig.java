@@ -1,11 +1,12 @@
 package com.flowframe.config;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 
 public class FlowframeConfig {
     private static final String CONFIG_DIR = "config/flowframe";
@@ -14,7 +15,8 @@ public class FlowframeConfig {
     
     // Configuration options
     public boolean enableMapRemoval = false; // Disabled by default
-    public boolean enableTrashBagRemoval = false; // Disabled by default
+    public boolean enableTrashBagRemoval = true; // Disabled by default
+    public boolean enableBanglumNukeCoreRemoval = true; // Disabled by default
     public boolean enableKeepInventory = false; // Disabled by default
     
     private FlowframeConfig() {}
@@ -86,6 +88,15 @@ public class FlowframeConfig {
     
     public boolean isTrashBagRemovalEnabled() {
         return enableTrashBagRemoval;
+    }
+    
+    public void setBanglumNukeCoreRemovalEnabled(boolean enabled) {
+        this.enableBanglumNukeCoreRemoval = enabled;
+        saveConfig();
+    }
+    
+    public boolean isBanglumNukeCoreRemovalEnabled() {
+        return enableBanglumNukeCoreRemoval;
     }
     
     public void setKeepInventoryEnabled(boolean enabled) {

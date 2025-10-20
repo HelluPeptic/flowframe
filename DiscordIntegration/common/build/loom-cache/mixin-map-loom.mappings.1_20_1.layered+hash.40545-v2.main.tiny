@@ -1,3 +1,0 @@
-v1	named	intermediary
-FIELD	de/erdbeerbaerlp/dcintegration/architectury/mixin/NetworkHandlerMixin	Lnet/minecraft/server/level/ServerPlayer;	player	field_14140
-FIELD	de/erdbeerbaerlp/dcintegration/architectury/mixin/AdvancementMixin	Lnet/minecraft/server/level/ServerPlayer;	player	field_13391

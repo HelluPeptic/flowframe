@@ -9,7 +9,7 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.text.Text;
 
 public class VersionCommand {
-    public static final String MOD_VERSION = "1.35.56";
+    public static final String MOD_VERSION = "1.36.22";
     
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
