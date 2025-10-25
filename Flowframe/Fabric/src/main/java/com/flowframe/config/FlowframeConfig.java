@@ -18,6 +18,8 @@ public class FlowframeConfig {
     public boolean enableTrashBagRemoval = true; // Disabled by default
     public boolean enableBanglumNukeCoreRemoval = true; // Disabled by default
     public boolean enableKeepInventory = false; // Disabled by default
+    public boolean enablePathSpeed = false; // Disabled by default
+    public double pathSpeedModifier = 0.3; // 30% speed increase by default
     
     private FlowframeConfig() {}
     
@@ -106,5 +108,23 @@ public class FlowframeConfig {
     
     public boolean isKeepInventoryEnabled() {
         return enableKeepInventory;
+    }
+    
+    public void setPathSpeedEnabled(boolean enabled) {
+        this.enablePathSpeed = enabled;
+        saveConfig();
+    }
+    
+    public boolean isPathSpeedEnabled() {
+        return enablePathSpeed;
+    }
+    
+    public void setPathSpeedModifier(double modifier) {
+        this.pathSpeedModifier = modifier;
+        saveConfig();
+    }
+    
+    public double getPathSpeedModifier() {
+        return pathSpeedModifier;
     }
 }

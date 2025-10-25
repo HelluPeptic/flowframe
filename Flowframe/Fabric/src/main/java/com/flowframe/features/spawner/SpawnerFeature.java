@@ -28,8 +28,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
 
 public class SpawnerFeature {
-    private static final Map<UUID, SpawnerData> spawners = new ConcurrentHashMap<>();
-    private static final Map<UUID, UUID> entityToSpawner = new ConcurrentHashMap<>(); // Entity UUID -> Spawner UUID
+    private static final Map<String, SpawnerData> spawners = new ConcurrentHashMap<>(); // Changed to String key for names
+    private static final Map<UUID, String> entityToSpawner = new ConcurrentHashMap<>(); // Entity UUID -> Spawner Name
     private static int tickCounter = 0;
     
     // Suggestion provider for entity types
@@ -70,20 +70,38 @@ public class SpawnerFeature {
         return builder.buildFuture();
     };
     
+    // Suggestion provider for spawner names
+    private static final SuggestionProvider<ServerCommandSource> SPAWNER_NAME_SUGGESTIONS = (context, builder) -> {
+        String input = builder.getRemaining().toLowerCase();
+        
+        for (String spawnerName : spawners.keySet()) {
+            if (spawnerName.toLowerCase().startsWith(input)) {
+                builder.suggest(spawnerName);
+            }
+        }
+        
+        return builder.buildFuture();
+    };
+    
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(CommandManager.literal("flowframe")
                 .then(CommandManager.literal("spawner")
                     .then(CommandManager.literal("add")
                         .requires(source -> hasSpawnerPermission(source))
-                        .then(CommandManager.argument("radius", IntegerArgumentType.integer(1, 100))
-                            .then(CommandManager.argument("limit", IntegerArgumentType.integer(1, 50))
-                                .then(CommandManager.argument("interval", IntegerArgumentType.integer(1, 6000))
-                                    .then(CommandManager.argument("mob", StringArgumentType.greedyString())
-                                        .suggests(ENTITY_SUGGESTIONS)
-                                        .executes(context -> addSpawner(context)))))))
+                        .then(CommandManager.argument("name", StringArgumentType.word())
+                            .then(CommandManager.argument("radius", IntegerArgumentType.integer(1, 100))
+                                .then(CommandManager.argument("limit", IntegerArgumentType.integer(1, 50))
+                                    .then(CommandManager.argument("interval", IntegerArgumentType.integer(1, 6000))
+                                        .then(CommandManager.argument("entityName", StringArgumentType.string())
+                                            .then(CommandManager.argument("mob", StringArgumentType.greedyString())
+                                                .suggests(ENTITY_SUGGESTIONS)
+                                                .executes(context -> addSpawner(context)))))))))
                     .then(CommandManager.literal("remove")
                         .requires(source -> hasSpawnerPermission(source))
+                        .then(CommandManager.argument("name", StringArgumentType.word())
+                            .suggests(SPAWNER_NAME_SUGGESTIONS)
+                            .executes(context -> removeSpawnerByName(context)))
                         .executes(context -> removeSpawner(context)))
                     .then(CommandManager.literal("list")
                         .requires(source -> hasSpawnerPermission(source))
@@ -117,10 +135,24 @@ public class SpawnerFeature {
             ServerPlayerEntity player = context.getSource().getPlayer();
             if (player == null) return 0;
 
+            String spawnerName = StringArgumentType.getString(context, "name");
             int radius = IntegerArgumentType.getInteger(context, "radius");
             int limit = IntegerArgumentType.getInteger(context, "limit");
             int interval = IntegerArgumentType.getInteger(context, "interval");
+            String entityNameInput = StringArgumentType.getString(context, "entityName");
             String mobString = StringArgumentType.getString(context, "mob");
+            
+            // Handle entity name - treat empty string as no name
+            String entityName = null;
+            if (entityNameInput != null && !entityNameInput.isEmpty() && !entityNameInput.equals("\"\"") && !entityNameInput.equals("")) {
+                entityName = entityNameInput;
+            }
+
+            // Check if spawner name already exists
+            if (spawners.containsKey(spawnerName)) {
+                player.sendMessage(Text.literal("§c[FLOWFRAME] Spawner with name '" + spawnerName + "' already exists!"), false);
+                return 0;
+            }
 
             // Parse entity type from string
             Identifier mobId = new Identifier(mobString);
@@ -136,25 +168,60 @@ public class SpawnerFeature {
             
             SpawnerData spawnerData = new SpawnerData(
                 spawnerId,
+                spawnerName,
                 playerPos,
                 radius,
                 mobType,
                 limit,
                 interval,
-                player.getServerWorld()
+                player.getServerWorld(),
+                entityName
             );
 
-            spawners.put(spawnerId, spawnerData);
+            spawners.put(spawnerName, spawnerData);
 
-            player.sendMessage(Text.literal("§a[FLOWFRAME] Spawner created! ID: " + spawnerId.toString().substring(0, 8) + 
-                "... | Mob: " + mobType.getTranslationKey() + 
+            String message = "§a[FLOWFRAME] Spawner '" + spawnerName + "' created!" +
+                " | Mob: " + mobType.getTranslationKey() + 
                 " | Radius: " + radius + 
                 " | Limit: " + limit + 
-                " | Interval: " + interval + " ticks"), false);
+                " | Interval: " + interval + " ticks";
+            
+            if (entityName != null) {
+                message += " | Entity Name: " + entityName;
+            }
+            
+            player.sendMessage(Text.literal(message), false);
 
             return 1;
         } catch (Exception e) {
             context.getSource().sendError(Text.literal("§c[FLOWFRAME] Error creating spawner: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int removeSpawnerByName(CommandContext<ServerCommandSource> context) {
+        try {
+            ServerPlayerEntity player = context.getSource().getPlayer();
+            if (player == null) return 0;
+
+            String spawnerName = StringArgumentType.getString(context, "name");
+            
+            SpawnerData spawnerData = spawners.get(spawnerName);
+            if (spawnerData == null) {
+                player.sendMessage(Text.literal("§c[FLOWFRAME] No spawner found with name '" + spawnerName + "'"), false);
+                return 0;
+            }
+
+            spawners.remove(spawnerName);
+            
+            // Clean up entity tracking for this spawner
+            final String finalSpawnerName = spawnerName;
+            entityToSpawner.entrySet().removeIf(entry -> entry.getValue().equals(finalSpawnerName));
+            
+            player.sendMessage(Text.literal("§c[FLOWFRAME] Spawner '" + spawnerName + "' removed!"), false);
+            return 1;
+        } catch (Exception e) {
+            context.getSource().sendError(Text.literal("§c[FLOWFRAME] Error removing spawner: " + e.getMessage()));
             return 0;
         }
     }
@@ -166,24 +233,27 @@ public class SpawnerFeature {
 
             BlockPos playerPos = player.getBlockPos();
             SpawnerData toRemove = null;
+            String spawnerName = null;
 
             // Find spawner that contains the player's position
-            for (SpawnerData spawnerData : spawners.values()) {
+            for (Map.Entry<String, SpawnerData> entry : spawners.entrySet()) {
+                SpawnerData spawnerData = entry.getValue();
                 if (spawnerData.world.equals(player.getServerWorld()) && 
                     spawnerData.center.isWithinDistance(playerPos, spawnerData.radius)) {
                     toRemove = spawnerData;
+                    spawnerName = entry.getKey();
                     break;
                 }
             }
 
             if (toRemove != null) {
-                final UUID spawnerIdToRemove = toRemove.id;
-                spawners.remove(spawnerIdToRemove);
+                spawners.remove(spawnerName);
                 
                 // Clean up entity tracking for this spawner
-                entityToSpawner.entrySet().removeIf(entry -> entry.getValue().equals(spawnerIdToRemove));
+                final String finalSpawnerName = spawnerName;
+                entityToSpawner.entrySet().removeIf(entry -> entry.getValue().equals(finalSpawnerName));
                 
-                player.sendMessage(Text.literal("§c[FLOWFRAME] Spawner removed! ID: " + spawnerIdToRemove.toString().substring(0, 8) + "..."), false);
+                player.sendMessage(Text.literal("§c[FLOWFRAME] Spawner '" + spawnerName + "' removed!"), false);
                 return 1;
             } else {
                 player.sendMessage(Text.literal("§e[FLOWFRAME] No spawner found at your current location"), false);
@@ -205,14 +275,23 @@ public class SpawnerFeature {
         }
 
         player.sendMessage(Text.literal("§e[FLOWFRAME] Active spawners:"), false);
-        for (SpawnerData spawnerData : spawners.values()) {
+        for (Map.Entry<String, SpawnerData> entry : spawners.entrySet()) {
+            String name = entry.getKey();
+            SpawnerData spawnerData = entry.getValue();
             int currentCount = getCurrentMobCount(spawnerData);
-            player.sendMessage(Text.literal("§7ID: " + spawnerData.id.toString().substring(0, 8) + 
-                "... | Mob: " + spawnerData.mobType.getTranslationKey() + 
+            
+            String message = "§7Name: " + name + 
+                " | Mob: " + spawnerData.mobType.getTranslationKey() + 
                 " | Center: " + spawnerData.center.toShortString() + 
                 " | Radius: " + spawnerData.radius + 
                 " | Count: " + currentCount + "/" + spawnerData.limit + 
-                " | Interval: " + spawnerData.interval + " ticks"), false);
+                " | Interval: " + spawnerData.interval + " ticks";
+            
+            if (spawnerData.entityName != null) {
+                message += " | Entity Name: " + spawnerData.entityName;
+            }
+            
+            player.sendMessage(Text.literal(message), false);
         }
 
         return 1;
@@ -255,11 +334,17 @@ public class SpawnerFeature {
                     if (spawnerData.mobType.create(world) instanceof LivingEntity entity) {
                         entity.refreshPositionAndAngles(x, y, z, random.nextFloat() * 360.0F, 0.0F);
                         
+                        // Apply custom name if specified
+                        if (spawnerData.entityName != null) {
+                            entity.setCustomName(Text.literal(spawnerData.entityName));
+                            entity.setCustomNameVisible(true);
+                        }
+                        
                         if (world.doesNotIntersectEntities(entity)) {
                             world.spawnEntity(entity);
                             
                             // Track this entity as belonging to our spawner
-                            entityToSpawner.put(entity.getUuid(), spawnerData.id);
+                            entityToSpawner.put(entity.getUuid(), spawnerData.name);
                             
                             break; // Successfully spawned, exit loop
                         }
@@ -296,7 +381,7 @@ public class SpawnerFeature {
             
             // Check if this entity was spawned by our spawner
             if (entityToSpawner.containsKey(entityUuid) && 
-                entityToSpawner.get(entityUuid).equals(spawnerData.id)) {
+                entityToSpawner.get(entityUuid).equals(spawnerData.name)) {
                 taggedCount++;
             } else {
                 // Also count nearby naturally spawned mobs within the original radius
@@ -314,12 +399,12 @@ public class SpawnerFeature {
         // Remove tracking for entities that no longer exist or are too far from any spawner
         Set<UUID> entitiesToRemove = new HashSet<>();
         
-        for (Map.Entry<UUID, UUID> entry : entityToSpawner.entrySet()) {
+        for (Map.Entry<UUID, String> entry : entityToSpawner.entrySet()) {
             UUID entityUuid = entry.getKey();
-            UUID spawnerUuid = entry.getValue();
+            String spawnerName = entry.getValue();
             
             // Check if spawner still exists
-            SpawnerData spawnerData = spawners.get(spawnerUuid);
+            SpawnerData spawnerData = spawners.get(spawnerName);
             if (spawnerData == null) {
                 entitiesToRemove.add(entityUuid);
                 continue;
@@ -364,21 +449,25 @@ public class SpawnerFeature {
 
     private static class SpawnerData {
         final UUID id;
+        final String name;
         final BlockPos center;
         final int radius;
         final EntityType<?> mobType;
         final int limit;
         final int interval;
         final ServerWorld world;
+        final String entityName; // Custom name for spawned entities
 
-        SpawnerData(UUID id, BlockPos center, int radius, EntityType<?> mobType, int limit, int interval, ServerWorld world) {
+        SpawnerData(UUID id, String name, BlockPos center, int radius, EntityType<?> mobType, int limit, int interval, ServerWorld world, String entityName) {
             this.id = id;
+            this.name = name;
             this.center = center;
             this.radius = radius;
             this.mobType = mobType;
             this.limit = limit;
             this.interval = interval;
             this.world = world;
+            this.entityName = entityName;
         }
     }
 }
