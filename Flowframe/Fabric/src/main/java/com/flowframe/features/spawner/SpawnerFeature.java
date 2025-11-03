@@ -115,7 +115,10 @@ public class SpawnerFeature {
             
             // Clean up every 5 minutes (6000 ticks)
             if (tickCounter % 6000 == 0) {
+                int beforeCleanup = entityToSpawner.size();
                 cleanupSpawnerEntities();
+                int afterCleanup = entityToSpawner.size();
+                System.out.println("[FLOWFRAME] Cleanup complete. Tracked entities: " + beforeCleanup + " -> " + afterCleanup);
             }
             
             for (SpawnerData spawnerData : spawners.values()) {
@@ -422,14 +425,15 @@ public class SpawnerFeature {
             spawnerData.mobType, entity -> true);
         
         for (net.minecraft.entity.Entity entity : allEntities) {
-            // Check NBT tag for spawner ownership
-            NbtCompound nbt = new NbtCompound();
-            entity.writeNbt(nbt);
+            // Check NBT tag for spawner ownership (this persists through chunk unload/reload)
+            NbtCompound nbt = entity.writeNbt(new NbtCompound());
             
             if (nbt.contains("FlowframeSpawner")) {
                 String spawnerName = nbt.getString("FlowframeSpawner");
                 if (spawnerName.equals(spawnerData.name)) {
                     count++;
+                    // Rebuild in-memory tracking for entities that were reloaded from chunks
+                    entityToSpawner.put(entity.getUuid(), spawnerData.name);
                 }
             }
             // Also check our in-memory tracking as fallback
@@ -443,7 +447,10 @@ public class SpawnerFeature {
     }
 
     private static void cleanupSpawnerEntities() {
-        // Remove tracking for entities that no longer exist
+        // First, rebuild tracking from all entities in the world (handles chunk reload)
+        rebuildTrackingFromNBT();
+        
+        // Then remove tracking for entities that no longer exist
         Set<UUID> entitiesToRemove = new HashSet<>();
         
         for (Map.Entry<UUID, String> entry : entityToSpawner.entrySet()) {
@@ -475,6 +482,26 @@ public class SpawnerFeature {
         // Remove all marked entities
         for (UUID entityUuid : entitiesToRemove) {
             entityToSpawner.remove(entityUuid);
+        }
+    }
+
+    private static void rebuildTrackingFromNBT() {
+        // Scan all worlds for entities with FlowframeSpawner NBT tags
+        for (SpawnerData spawnerData : spawners.values()) {
+            List<? extends net.minecraft.entity.Entity> allEntities = spawnerData.world.getEntitiesByType(
+                spawnerData.mobType, entity -> true);
+            
+            for (net.minecraft.entity.Entity entity : allEntities) {
+                NbtCompound nbt = entity.writeNbt(new NbtCompound());
+                
+                if (nbt.contains("FlowframeSpawner")) {
+                    String spawnerName = nbt.getString("FlowframeSpawner");
+                    // Only track if the spawner still exists
+                    if (spawners.containsKey(spawnerName)) {
+                        entityToSpawner.put(entity.getUuid(), spawnerName);
+                    }
+                }
+            }
         }
     }
 
