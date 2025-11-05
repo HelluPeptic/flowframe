@@ -30,6 +30,7 @@ import com.flowframe.features.mapremoval.MapRemovalFeature;
 import com.flowframe.features.oreannounce.OreAnnounceFeature;
 import com.flowframe.features.pathspeed.PathSpeedFeature;
 import com.flowframe.features.phantomdeny.PhantomDenyFeature;
+import com.flowframe.features.rainmodifier.RainModifierFeature;
 import com.flowframe.features.spawner.SpawnerFeature;
 import com.flowframe.features.tphere.TpHereCommand;
 import com.flowframe.features.version.VersionCommand;
@@ -62,6 +63,7 @@ public class FlowframeMod implements ModInitializer {
         PathSpeedFeature.register();
         BlockDuplicationFix.register();
         SpawnerFeature.register();
+        RainModifierFeature.register();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }

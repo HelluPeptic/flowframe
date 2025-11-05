@@ -20,6 +20,8 @@ public class FlowframeConfig {
     public boolean enableKeepInventory = false; // Disabled by default
     public boolean enablePathSpeed = false; // Disabled by default
     public double pathSpeedModifier = 0.3; // 30% speed increase by default
+    public double rainSkipPercentage = 0.0; // 0% chance to skip rain by default
+    public boolean rainNotifications = false; // Notifications disabled by default
     
     private FlowframeConfig() {}
     
@@ -126,5 +128,23 @@ public class FlowframeConfig {
     
     public double getPathSpeedModifier() {
         return pathSpeedModifier;
+    }
+    
+    public void setRainSkipPercentage(double percentage) {
+        this.rainSkipPercentage = Math.max(0.0, Math.min(1.0, percentage)); // Clamp between 0 and 1
+        saveConfig();
+    }
+    
+    public double getRainSkipPercentage() {
+        return rainSkipPercentage;
+    }
+    
+    public void setRainNotifications(boolean enabled) {
+        this.rainNotifications = enabled;
+        saveConfig();
+    }
+    
+    public boolean isRainNotificationsEnabled() {
+        return rainNotifications;
     }
 }

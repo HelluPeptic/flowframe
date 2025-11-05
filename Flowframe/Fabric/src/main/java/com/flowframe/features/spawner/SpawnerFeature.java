@@ -115,10 +115,7 @@ public class SpawnerFeature {
             
             // Clean up every 5 minutes (6000 ticks)
             if (tickCounter % 6000 == 0) {
-                int beforeCleanup = entityToSpawner.size();
                 cleanupSpawnerEntities();
-                int afterCleanup = entityToSpawner.size();
-                System.out.println("[FLOWFRAME] Cleanup complete. Tracked entities: " + beforeCleanup + " -> " + afterCleanup);
             }
             
             for (SpawnerData spawnerData : spawners.values()) {

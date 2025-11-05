@@ -19,7 +19,8 @@
     "MixinLivingEntity_PotionDuration_Fast",
     "MixinRecipeManager_MapRemoval",
     "MixinLivingEntity_TipsyDuration",
-    "MixinPotionItem"
+    "MixinPotionItem",
+    "MixinServerWorld_RainModifier"
   ],
   "client": [],
   "server": [],
