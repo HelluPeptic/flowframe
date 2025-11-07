@@ -1,5 +1,9 @@
 package com.flowframe.features.spawner;
 
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -8,6 +12,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -15,6 +25,7 @@ import com.mojang.brigadier.suggestion.SuggestionProvider;
 
 import me.lucko.fabric.api.permissions.v0.Permissions;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.LivingEntity;
@@ -27,8 +38,12 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
 
 public class SpawnerFeature {
+    private static final String CONFIG_DIR = "config/flowframe";
+    private static final String SPAWNERS_FILE = "spawners.json";
     private static final Map<String, SpawnerData> spawners = new ConcurrentHashMap<>(); // Changed to String key for names
     private static final Map<UUID, String> entityToSpawner = new ConcurrentHashMap<>(); // Entity UUID -> Spawner Name
     private static int tickCounter = 0;
@@ -109,6 +124,15 @@ public class SpawnerFeature {
                         .executes(context -> listSpawners(context)))));
         });
 
+        // Register server lifecycle events for persistence
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            loadSpawners(server);
+        });
+        
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            saveSpawners();
+        });
+
         // Register tick event for spawner processing
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             tickCounter++;
@@ -180,6 +204,7 @@ public class SpawnerFeature {
             );
 
             spawners.put(spawnerName, spawnerData);
+            saveSpawners(); // Save to disk
 
             String message = "§a[FLOWFRAME] Spawner '" + spawnerName + "' created!" +
                 " | Mob: " + mobType.getTranslationKey() + 
@@ -214,6 +239,7 @@ public class SpawnerFeature {
             }
 
             spawners.remove(spawnerName);
+            saveSpawners(); // Save to disk
             
             // Clean up entity tracking for this spawner
             final String finalSpawnerName = spawnerName;
@@ -249,6 +275,7 @@ public class SpawnerFeature {
 
             if (toRemove != null) {
                 spawners.remove(spawnerName);
+                saveSpawners(); // Save to disk
                 
                 // Clean up entity tracking for this spawner
                 final String finalSpawnerName = spawnerName;
@@ -499,6 +526,122 @@ public class SpawnerFeature {
                     }
                 }
             }
+        }
+    }
+
+    private static void saveSpawners() {
+        try {
+            File configDir = new File(CONFIG_DIR);
+            if (!configDir.exists()) {
+                configDir.mkdirs();
+            }
+            
+            File spawnersFile = new File(configDir, SPAWNERS_FILE);
+            
+            JsonObject root = new JsonObject();
+            JsonArray spawnersArray = new JsonArray();
+            
+            for (SpawnerData spawnerData : spawners.values()) {
+                JsonObject spawnerObj = new JsonObject();
+                spawnerObj.addProperty("name", spawnerData.name);
+                spawnerObj.addProperty("centerX", spawnerData.center.getX());
+                spawnerObj.addProperty("centerY", spawnerData.center.getY());
+                spawnerObj.addProperty("centerZ", spawnerData.center.getZ());
+                spawnerObj.addProperty("radius", spawnerData.radius);
+                spawnerObj.addProperty("mobType", Registries.ENTITY_TYPE.getId(spawnerData.mobType).toString());
+                spawnerObj.addProperty("limit", spawnerData.limit);
+                spawnerObj.addProperty("interval", spawnerData.interval);
+                spawnerObj.addProperty("world", spawnerData.world.getRegistryKey().getValue().toString());
+                if (spawnerData.entityName != null) {
+                    spawnerObj.addProperty("entityName", spawnerData.entityName);
+                }
+                
+                spawnersArray.add(spawnerObj);
+            }
+            
+            root.add("spawners", spawnersArray);
+            
+            try (FileWriter writer = new FileWriter(spawnersFile)) {
+                Gson gson = new GsonBuilder().setPrettyPrinting().create();
+                gson.toJson(root, writer);
+                System.out.println("[FLOWFRAME] Saved " + spawners.size() + " spawners to: " + spawnersFile.getAbsolutePath());
+            }
+        } catch (IOException e) {
+            System.err.println("[FLOWFRAME] Failed to save spawners: " + e.getMessage());
+        }
+    }
+    
+    private static void loadSpawners(net.minecraft.server.MinecraftServer server) {
+        try {
+            File configDir = new File(CONFIG_DIR);
+            File spawnersFile = new File(configDir, SPAWNERS_FILE);
+            
+            if (!spawnersFile.exists()) {
+                System.out.println("[FLOWFRAME] No spawners file found, starting with empty spawners list");
+                return;
+            }
+            
+            try (FileReader reader = new FileReader(spawnersFile)) {
+                Gson gson = new Gson();
+                JsonObject root = gson.fromJson(reader, JsonObject.class);
+                
+                if (root == null || !root.has("spawners")) {
+                    System.out.println("[FLOWFRAME] Invalid or empty spawners file");
+                    return;
+                }
+                
+                JsonArray spawnersArray = root.getAsJsonArray("spawners");
+                int loadedCount = 0;
+                
+                for (JsonElement element : spawnersArray) {
+                    JsonObject spawnerObj = element.getAsJsonObject();
+                    
+                    try {
+                        String name = spawnerObj.get("name").getAsString();
+                        int centerX = spawnerObj.get("centerX").getAsInt();
+                        int centerY = spawnerObj.get("centerY").getAsInt();
+                        int centerZ = spawnerObj.get("centerZ").getAsInt();
+                        int radius = spawnerObj.get("radius").getAsInt();
+                        String mobTypeStr = spawnerObj.get("mobType").getAsString();
+                        int limit = spawnerObj.get("limit").getAsInt();
+                        int interval = spawnerObj.get("interval").getAsInt();
+                        String worldStr = spawnerObj.get("world").getAsString();
+                        String entityName = spawnerObj.has("entityName") ? spawnerObj.get("entityName").getAsString() : null;
+                        
+                        // Get the world
+                        ServerWorld world = server.getWorld(RegistryKey.of(RegistryKeys.WORLD, new Identifier(worldStr)));
+                        
+                        if (world == null) {
+                            System.err.println("[FLOWFRAME] World not found for spawner " + name + ": " + worldStr);
+                            continue;
+                        }
+                        
+                        // Get the entity type
+                        EntityType<?> mobType = Registries.ENTITY_TYPE.get(new Identifier(mobTypeStr));
+                        if (mobType == null) {
+                            System.err.println("[FLOWFRAME] Invalid mob type for spawner " + name + ": " + mobTypeStr);
+                            continue;
+                        }
+                        
+                        // Create spawner data
+                        BlockPos center = new BlockPos(centerX, centerY, centerZ);
+                        SpawnerData spawnerData = new SpawnerData(
+                            UUID.randomUUID(), name, center, radius, mobType, limit, interval, world, entityName
+                        );
+                        
+                        spawners.put(name, spawnerData);
+                        loadedCount++;
+                        
+                    } catch (Exception e) {
+                        System.err.println("[FLOWFRAME] Failed to load spawner: " + e.getMessage());
+                    }
+                }
+                
+                System.out.println("[FLOWFRAME] Loaded " + loadedCount + " spawners from file");
+                
+            }
+        } catch (Exception e) {
+            System.err.println("[FLOWFRAME] Failed to load spawners: " + e.getMessage());
         }
     }
 
