@@ -22,6 +22,8 @@ public class FlowframeConfig {
     public double pathSpeedModifier = 0.3; // 30% speed increase by default
     public double rainSkipPercentage = 0.0; // 0% chance to skip rain by default
     public boolean rainNotifications = false; // Notifications disabled by default
+    public boolean enableAFKKicking = false; // AFK kicking disabled by default
+    public int afkTimeoutMinutes = 15; // 15 minutes AFK timeout by default
     
     private FlowframeConfig() {}
     
@@ -146,5 +148,23 @@ public class FlowframeConfig {
     
     public boolean isRainNotificationsEnabled() {
         return rainNotifications;
+    }
+    
+    public void setAFKKickingEnabled(boolean enabled) {
+        this.enableAFKKicking = enabled;
+        saveConfig();
+    }
+    
+    public boolean isAFKKickingEnabled() {
+        return enableAFKKicking;
+    }
+    
+    public void setAFKTimeoutMinutes(int minutes) {
+        this.afkTimeoutMinutes = Math.max(1, Math.min(120, minutes)); // Clamp between 1 and 120 minutes
+        saveConfig();
+    }
+    
+    public int getAFKTimeoutMinutes() {
+        return afkTimeoutMinutes;
     }
 }

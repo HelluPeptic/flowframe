@@ -14,6 +14,7 @@ Flowframe Mod Features:
 - All major features are permission-based, allowing server admins to grant or revoke access to /tphere, /keepinv, /orelog, ore broadcasts, and arms workbench usage individually.
 */
 
+import com.flowframe.features.afkkick.AFKKickFeature;
 import com.flowframe.features.blockduplication.BlockDuplicationFix;
 import com.flowframe.features.chatformat.ChatFormatFeature;
 import com.flowframe.features.countentities.CountEntitiesCommand;
@@ -64,6 +65,7 @@ public class FlowframeMod implements ModInitializer {
         BlockDuplicationFix.register();
         SpawnerFeature.register();
         RainModifierFeature.register();
+        AFKKickFeature.register();
         System.out.println("[FLOWFRAME] Flowframe mod initialized");
     }
 }

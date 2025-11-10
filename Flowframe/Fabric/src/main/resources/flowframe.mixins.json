@@ -20,7 +20,8 @@
     "MixinRecipeManager_MapRemoval",
     "MixinLivingEntity_TipsyDuration",
     "MixinPotionItem",
-    "MixinServerWorld_RainModifier"
+    "MixinServerWorld_RainModifier",
+    "MixinServerPlayNetworkHandler_AFKDetection"
   ],
   "client": [],
   "server": [],
