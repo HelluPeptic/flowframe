@@ -198,12 +198,13 @@ public class AFKKickFeature {
             }
         });
         
-        // Broadcast to ops/console
+        // Send message only to operators
         Text broadcastMessage = Text.literal("§e[FLOWFRAME] " + player.getName().getString() + 
                                            " was kicked for being AFK (" + timeoutMinutes + " minutes)");
         
         try {
-            player.getServer().getPlayerManager().broadcast(broadcastMessage, false);
+            // Send to operators only (permission level 2+)
+            player.getServer().getPlayerManager().broadcast(broadcastMessage, true);
         } catch (Exception ignored) {
             // Silently handle broadcast errors
         }
