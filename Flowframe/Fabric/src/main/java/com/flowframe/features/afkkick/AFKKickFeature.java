@@ -198,15 +198,19 @@ public class AFKKickFeature {
             }
         });
         
-        // Send message only to operators
-        Text broadcastMessage = Text.literal("§e[FLOWFRAME] " + player.getName().getString() + 
+        // Send message only to operators via direct chat message
+        Text operatorMessage = Text.literal("§e[FLOWFRAME] " + player.getName().getString() + 
                                            " was kicked for being AFK (" + timeoutMinutes + " minutes)");
         
         try {
-            // Send to operators only (permission level 2+)
-            player.getServer().getPlayerManager().broadcast(broadcastMessage, true);
+            // Send directly to operators only, avoiding any broadcast system
+            for (ServerPlayerEntity onlinePlayer : player.getServer().getPlayerManager().getPlayerList()) {
+                if (onlinePlayer.hasPermissionLevel(2)) { // Only operators (permission level 2+)
+                    onlinePlayer.sendMessageToClient(operatorMessage, false);
+                }
+            }
         } catch (Exception ignored) {
-            // Silently handle broadcast errors
+            // Silently handle messaging errors
         }
     }
     
