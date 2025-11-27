@@ -136,6 +136,11 @@ public class AFKKickFeature {
             UUID playerId = player.getUuid();
             PlayerAFKData data = playerData.get(playerId);
             
+            // Skip players with bypass permission
+            if (Permissions.check(player, "flowframe.afkkicking.bypass", false)) {
+                continue;
+            }
+            
             if (data == null) {
                 // Player just joined, initialize data
                 data = new PlayerAFKData(player.getYaw(), player.getPitch(), currentTime);
