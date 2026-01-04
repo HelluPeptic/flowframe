@@ -19,4 +19,4 @@ pluginManagement {
     }
 }
 
-rootProject.name = 'flowframe-1.21.1'
+rootProject.name = 'flowframe-1.21.11'
