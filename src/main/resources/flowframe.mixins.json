@@ -9,7 +9,8 @@
     "EndPortalBlockMixin",
     "LivingEntityMixin",
     "ServerLevelMixin",
-    "FarmBlockMixin"
+    "FarmBlockMixin",
+    "PotionDurationMixin"
   ],
   "injectors": {
     "defaultRequire": 1

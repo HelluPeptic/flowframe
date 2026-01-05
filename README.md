@@ -36,6 +36,18 @@ A server-side Minecraft mod for version 1.21.1 that adds various Quality of Life
 - Weather cycle automatically enabled on every server restart
 - No need to manually re-enable these game rules
 
+### 7. **Spawner System**
+- Create custom mob spawners in defined areas with entity limits and custom names
+- Spawners persist across server restarts and track spawned entities properly  
+- Mobs spawn at the same Y-level as the spawner (not at the bottom like a cylinder)
+- Supports all living entity types with full tab completion for mob IDs
+
+### 8. **Potion Extension**
+- Drinking potions automatically last 2 hours instead of their normal duration
+- Only affects potions consumed by drinking (not tipped arrows, guardian effects, beacon effects, etc.)
+- This makes potions much more useful for long-term activities
+- Exceptions: Poison, Instant Damage, and Weakness retain their normal durations
+
 ## Commands
 
 ### `/endtoggle`
@@ -52,6 +64,31 @@ A server-side Minecraft mod for version 1.21.1 that adds various Quality of Life
   - `/flowframe pathblocksspeed 50` - 50% faster (1.5x speed)
   - `/flowframe pathblocksspeed 100` - 100% faster (2x speed)
   - `/flowframe pathblocksspeed 0` - No speed boost
+
+### `/flowframe spawner` Commands
+- **Permission:** Operator level 2
+- **Description:** Manage custom mob spawners
+
+#### `/flowframe spawner add <name> <radius> <limit> <interval> <entityName> <mobID>`
+- **name:** Unique identifier for the spawner
+- **radius:** Spawn radius around the spawner location (1-100 blocks)
+- **limit:** Maximum number of mobs that can exist in the area (1-50)
+- **interval:** Spawn interval in ticks (1-6000, where 20 ticks = 1 second)
+- **entityName:** Custom name for spawned entities (use `\"\"` for no name)
+- **mobID:** Minecraft entity ID (supports tab completion)
+- **Examples:**
+  - `/flowframe spawner add GuardPost 10 5 100 "Guard Zombie" minecraft:zombie`
+  - `/flowframe spawner add CowFarm 15 8 200 "" minecraft:cow`
+  - `/flowframe spawner add SkeletonTower 12 3 60 "Archer" minecraft:skeleton`
+
+#### `/flowframe spawner remove [name]`
+- Remove a spawner by name or remove the spawner at your current location
+- **Examples:**
+  - `/flowframe spawner remove GuardPost` - Remove specific spawner
+  - `/flowframe spawner remove` - Remove spawner at your location
+
+#### `/flowframe spawner list`
+- View all active spawners with their current mob counts and settings
 
 ## Installation
 
