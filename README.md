@@ -26,7 +26,12 @@ A server-side Minecraft mod for version 1.21.1 that adds various Quality of Life
 - Speed boost continues for 1 second after leaving the path block (grace period)
 - Speed multiplier is configurable (see commands below)
 
-### 5. **Server Restart Defaults**
+### 5. **Crop Trampling Protection**
+- Farmland blocks can no longer be trampled by entities falling or jumping on them
+- Protects your crops from accidental damage by players, mobs, and items
+- Entities still take normal fall damage when landing on farmland
+
+### 6. **Server Restart Defaults**
 - Daylight cycle automatically enabled on every server restart
 - Weather cycle automatically enabled on every server restart
 - No need to manually re-enable these game rules
@@ -71,6 +76,7 @@ The mod uses Mixins to modify game behavior:
 - `CreeperMixin` - Prevents block damage from explosions
 - `PhantomSpawnerMixin` - Redirects phantom spawns to Nether
 - `EndPortalBlockMixin` - Controls portal entry per player
+- `FarmBlockMixin` - Prevents farmland from being trampled
 - `LivingEntityMixin` - Applies path block speed boost
 - `ServerLevelMixin` - Cleanup on player disconnect
 
