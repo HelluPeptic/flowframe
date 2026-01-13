@@ -48,6 +48,13 @@ A server-side Minecraft mod for version 1.21.1 that adds various Quality of Life
 - This makes potions much more useful for long-term activities
 - Exceptions: Poison, Instant Damage, and Weakness retain their normal durations
 
+### 9. **Town System**
+- Create and join towns to identify community membership
+- Town prefixes appear in chat and above nametags using vanilla team mechanics
+- Compatible with other chat formatting mods that use `%team_prefix%`
+- Purely cosmetic - no claims, factions, or gameplay impact
+- Towns persist across server restarts with full data preservation
+
 ## Commands
 
 ### `/endtoggle`
@@ -89,6 +96,48 @@ A server-side Minecraft mod for version 1.21.1 that adds various Quality of Life
 
 #### `/flowframe spawner list`
 - View all active spawners with their current mob counts and settings
+
+### `/town` Commands
+
+#### `/town create <name> <color> <prefix> <coords>`
+- **Permission:** All players
+- **Description:** Create a new town with specified settings
+- **Usage:** `/town create Corvia blue "Corvia" ~ ~ ~`
+- **Parameters:**
+  - `name` - Town name (single word)
+  - `color` - Color from Minecraft's default colors (black, dark_blue, dark_green, etc.)
+  - `prefix` - Text that appears before player names 
+  - `coords` - Town location (use ~ ~ ~ for current position)
+
+#### `/town join <name>`
+- **Permission:** All players
+- **Description:** Join an existing town
+- **Usage:** `/town join Corvia`
+
+#### `/town leave`
+- **Permission:** All players  
+- **Description:** Leave your current town
+- **Usage:** `/town leave`
+
+#### `/town disband <name>`
+- **Permission:** All players (town owners only)
+- **Description:** Disband a town you own
+- **Usage:** `/town disband Corvia`
+
+#### `/town edit <name> <color>`
+- **Permission:** All players (town owners only)  
+- **Description:** Change your town's color
+- **Usage:** `/town edit Corvia red`
+
+#### `/town list`
+- **Permission:** All players
+- **Description:** Show all existing towns
+- **Usage:** `/town list`
+
+#### `/town info <name>`
+- **Permission:** All players
+- **Description:** Show town information
+- **Usage:** `/town info Corvia`
 
 ## Installation
 

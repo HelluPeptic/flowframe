@@ -5,7 +5,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "CreeperMixin",
-    "PhantomSpawnerMixin",
+    "PhantomSpawnerMixin", 
     "EndPortalBlockMixin",
     "LivingEntityMixin",
     "ServerLevelMixin",
