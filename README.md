@@ -50,10 +50,8 @@ A server-side Minecraft mod for version 1.21.1 that adds various Quality of Life
 
 ### 9. **Town System**
 - Create and join towns to identify community membership
-- Town prefixes appear in chat and above nametags using vanilla team mechanics
-- Compatible with other chat formatting mods that use `%team_prefix%`
-- Purely cosmetic - no claims, factions, or gameplay impact
-- Towns persist across server restarts with full data preservation
+- Town prefixes appear in chat and above nametags
+- Main command: `/town <create|disband|join|leave|edit|info>
 
 ## Commands
 
