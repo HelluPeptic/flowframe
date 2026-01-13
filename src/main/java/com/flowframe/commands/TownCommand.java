@@ -97,26 +97,26 @@ public class TownCommand {
         try {
             // Check town name length
             if (name.length() > 20) {
-                player.sendSystemMessage(Component.literal("§c[TOWN] Town name must be 20 characters or less!"));
+                player.sendSystemMessage(Component.literal("§cTown name must be 20 characters or less!"));
                 return 0;
             }
 
             // Parse color
             ChatFormatting color = parseChatColor(colorName);
             if (color == null) {
-                player.sendSystemMessage(Component.literal("§c[TOWN] Invalid color: " + colorName));
+                player.sendSystemMessage(Component.literal("§cInvalid color: " + colorName));
                 return 0;
             }
 
             // Check if town already exists
             if (TownManager.townExists(name)) {
-                player.sendSystemMessage(Component.literal("§c[TOWN] Town '" + name + "' already exists!"));
+                player.sendSystemMessage(Component.literal("§cTown '" + name + "' already exists!"));
                 return 0;
             }
 
             // Check if player already owns a town
             if (TownManager.getPlayerOwnedTown(player.getUUID()) != null) {
-                player.sendSystemMessage(Component.literal("§c[TOWN] You already own a town!"));
+                player.sendSystemMessage(Component.literal("§cYou already own a town!"));
                 return 0;
             }
 
@@ -125,13 +125,10 @@ public class TownCommand {
             TownManager.createTown(townData);
             TownManager.setPlayerTown(player.getUUID(), name);
 
-            player.sendSystemMessage(Component.literal("§a[TOWN] Successfully created town '" + name + "'!"));
-            player.sendSystemMessage(Component.literal("§7Town location: " + coords.getX() + ", " + coords.getY() + ", " + coords.getZ()));
-
             return 1;
 
         } catch (Exception e) {
-            player.sendSystemMessage(Component.literal("§c[TOWN] Error creating town: " + e.getMessage()));
+            player.sendSystemMessage(Component.literal("§cError creating town: " + e.getMessage()));
             return 0;
         }
     }
@@ -146,14 +143,14 @@ public class TownCommand {
 
         // Check if town exists
         if (!TownManager.townExists(townName)) {
-            player.sendSystemMessage(Component.literal("§c[TOWN] Town '" + townName + "' does not exist!"));
+            player.sendSystemMessage(Component.literal("§cTown '" + townName + "' does not exist!"));
             return 0;
         }
 
         // Check if player is already in a town
         String currentTown = TownManager.getPlayerTown(player.getUUID());
         if (currentTown != null) {
-            player.sendSystemMessage(Component.literal("§c[TOWN] You are already in town '" + currentTown + "'! Leave first."));
+            player.sendSystemMessage(Component.literal("§cYou are already in town '" + currentTown + "'! Leave first."));
             return 0;
         }
 
@@ -169,7 +166,6 @@ public class TownCommand {
         
         TownManager.setPlayerTown(player.getUUID(), townName);
 
-        player.sendSystemMessage(Component.literal("§a[TOWN] You joined '" + townName + "'!"));
         if (townData != null) {
             player.sendSystemMessage(Component.literal("§7Town location: " + 
                     townData.getCoords().getX() + ", " + 
@@ -196,18 +192,18 @@ public class TownCommand {
 
         String currentTown = TownManager.getPlayerTown(player.getUUID());
         if (currentTown == null) {
-            player.sendSystemMessage(Component.literal("§c[TOWN] You are not in any town!"));
+            player.sendSystemMessage(Component.literal("§cYou are not in any town!"));
             return 0;
         }
 
         // Check if player owns the town
         if (TownManager.getPlayerOwnedTown(player.getUUID()) != null) {
-            player.sendSystemMessage(Component.literal("§c[TOWN] You cannot leave a town you own! Disband it instead."));
+            player.sendSystemMessage(Component.literal("§cYou cannot leave a town you own! Disband it instead."));
             return 0;
         }
 
         TownManager.removePlayerFromTown(player.getUUID());
-        player.sendSystemMessage(Component.literal("§a[TOWN] You left '" + currentTown + "'!"));
+        player.sendSystemMessage(Component.literal("§aYou left '" + currentTown + "'!"));
 
         return 1;
     }
@@ -222,20 +218,20 @@ public class TownCommand {
 
         // Check if town exists
         if (!TownManager.townExists(townName)) {
-            player.sendSystemMessage(Component.literal("§c[TOWN] Town '" + townName + "' does not exist!"));
+            player.sendSystemMessage(Component.literal("§cTown '" + townName + "' does not exist!"));
             return 0;
         }
 
         // Check if player owns the town
         String ownedTown = TownManager.getPlayerOwnedTown(player.getUUID());
         if (ownedTown == null || !ownedTown.equals(townName)) {
-            player.sendSystemMessage(Component.literal("§c[TOWN] You do not own town '" + townName + "'!"));
+            player.sendSystemMessage(Component.literal("§cYou do not own town '" + townName + "'!"));
             return 0;
         }
 
         // Disband town
         int memberCount = TownManager.disbandTown(townName);
-        player.sendSystemMessage(Component.literal("§a[TOWN] Successfully disbanded '" + townName + "'!"));
+        player.sendSystemMessage(Component.literal("§aSuccessfully disbanded '" + townName + "'!"));
         player.sendSystemMessage(Component.literal("§7Removed " + memberCount + " members from the town."));
 
         return 1;
@@ -252,27 +248,27 @@ public class TownCommand {
 
         // Check if town exists
         if (!TownManager.townExists(townName)) {
-            player.sendSystemMessage(Component.literal("§c[TOWN] Town '" + townName + "' does not exist!"));
+            player.sendSystemMessage(Component.literal("§cTown '" + townName + "' does not exist!"));
             return 0;
         }
 
         // Check if player owns the town
         String ownedTown = TownManager.getPlayerOwnedTown(player.getUUID());
         if (ownedTown == null || !ownedTown.equals(townName)) {
-            player.sendSystemMessage(Component.literal("§c[TOWN] You do not own town '" + townName + "'!"));
+            player.sendSystemMessage(Component.literal("§cYou do not own town '" + townName + "'!"));
             return 0;
         }
 
         // Parse color
         ChatFormatting color = parseChatColor(colorName);
         if (color == null) {
-            player.sendSystemMessage(Component.literal("§c[TOWN] Invalid color: " + colorName));
+            player.sendSystemMessage(Component.literal("§cInvalid color: " + colorName));
             return 0;
         }
 
         // Update town color
         TownManager.updateTownColor(townName, color);
-        player.sendSystemMessage(Component.literal("§a[TOWN] Updated color for '" + townName + "' to " + color + colorName + "§r!"));
+        player.sendSystemMessage(Component.literal("§aUpdated color for '" + townName + "' to " + color + colorName + "§r!"));
 
         return 1;
     }
@@ -286,13 +282,13 @@ public class TownCommand {
         String townName = StringArgumentType.getString(context, "name");
 
         if (!TownManager.townExists(townName)) {
-            player.sendSystemMessage(Component.literal("§c[TOWN] Town '" + townName + "' does not exist!"));
+            player.sendSystemMessage(Component.literal("§cTown '" + townName + "' does not exist!"));
             return 0;
         }
 
         TownData town = TownManager.getTown(townName);
         if (town == null) {
-            player.sendSystemMessage(Component.literal("§c[TOWN] Error loading town data!"));
+            player.sendSystemMessage(Component.literal("§cError loading town data!"));
             return 0;
         }
 

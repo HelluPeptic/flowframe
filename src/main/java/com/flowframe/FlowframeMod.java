@@ -42,15 +42,12 @@ public class FlowframeMod implements ModInitializer {
             LOGGER.info("Town system shut down");
         });
 
-        // Handle player join events to update teams
+        // Handle player join events to restore team prefixes
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            String townName = TownManager.getPlayerTown(handler.getPlayer().getUUID());
-            if (townName != null) {
-                // Delay team assignment by 1 tick to ensure player is fully loaded
-                server.execute(() -> {
-                    TownManager.setPlayerTown(handler.getPlayer().getUUID(), townName);
-                });
-            }
+            // Delay team restoration by 1 tick to ensure player is fully loaded
+            server.execute(() -> {
+                TownManager.restorePlayerTeamOnJoin(handler.getPlayer());
+            });
         });
 
         LOGGER.info("Flowframe mod initialized!");

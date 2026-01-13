@@ -60,7 +60,7 @@ public class TownManager {
         
         // Broadcast message and play sound for new town founding
         broadcastTownEvent(
-            Component.literal("§6" + townData.getFormattedPrefix() + " §6has been founded! §7Welcome to the world!"),
+            Component.literal("§6" + townData.getName() + " §6has been founded! §7Welcome to the world!"),
             "town_founded"
         );
     }
@@ -156,9 +156,29 @@ public class TownManager {
             oldRank = town.getRank(oldMemberCount);
         }
         
+        // Check if this is the town owner (creator) to avoid duplicate messages
+        boolean isOwner = (town != null && town.getOwner().equals(playerUuid));
+        
         playerTowns.put(playerUuid, townName);
         updatePlayerTeam(playerUuid, townName);
         savePlayerTowns();
+        
+        // Broadcast join message for non-owners (owners already get founding message)
+        if (town != null && !isOwner) {
+            // Get player name for the message
+            String playerName = "Unknown Player";
+            if (currentServer != null) {
+                ServerPlayer player = currentServer.getPlayerList().getPlayer(playerUuid);
+                if (player != null) {
+                    playerName = player.getName().getString();
+                }
+            }
+            
+            broadcastTownEvent(
+                Component.literal(town.getColor() + town.getName() + " §6welcomes a new member, " + "§6" + playerName + "§6!"),
+                "town_join"
+            );
+        }
         
         // Check if town reached a new rank
         if (town != null) {
@@ -232,9 +252,6 @@ public class TownManager {
     private static void updatePlayerTeam(UUID playerUuid, String townName) {
         if (currentServer == null) return;
         
-        ServerPlayer player = currentServer.getPlayerList().getPlayer(playerUuid);
-        if (player == null) return;
-        
         TownData town = getTown(townName);
         if (town == null) return;
         
@@ -246,14 +263,24 @@ public class TownManager {
         if (team == null) {
             team = scoreboard.addPlayerTeam(teamName);
             team.setDisplayName(Component.literal(townName));
-            team.setColor(town.getColor());
         }
         
-        // Always update prefix to ensure it's current
+        // Always update team properties to ensure they're current
+        team.setColor(town.getColor());
         team.setPlayerPrefix(Component.literal(town.getFormattedPrefix() + " "));
         
-        // Add player to team
-        scoreboard.addPlayerToTeam(player.getScoreboardName(), team);
+        // Add player to team if they're online
+        ServerPlayer player = currentServer.getPlayerList().getPlayer(playerUuid);
+        if (player != null) {
+            // Remove from any other team first
+            PlayerTeam currentTeam = scoreboard.getPlayersTeam(player.getScoreboardName());
+            if (currentTeam != null && !currentTeam.equals(team)) {
+                scoreboard.removePlayerFromTeam(player.getScoreboardName(), currentTeam);
+            }
+            
+            // Add to correct team
+            scoreboard.addPlayerToTeam(player.getScoreboardName(), team);
+        }
     }
     
     private static void removePlayerFromTeam(UUID playerUuid) {
@@ -278,12 +305,22 @@ public class TownManager {
     public static void updateAllPlayerTeams() {
         if (currentServer == null) return;
         
-        // First, clean up all stale town teams
-        cleanupStaleTeams();
+        // Don't clean up stale teams during initialization - let teams restore naturally
+        // cleanupStaleTeams();
         
-        // Then update all current player teams
+        // Update all current player teams (only for online players)
         for (Map.Entry<UUID, String> entry : playerTowns.entrySet()) {
             updatePlayerTeam(entry.getKey(), entry.getValue());
+        }
+    }
+    
+    // Method to restore a player's team when they join the server
+    public static void restorePlayerTeamOnJoin(ServerPlayer player) {
+        if (player == null) return;
+        
+        String townName = getPlayerTown(player.getUUID());
+        if (townName != null) {
+            updatePlayerTeam(player.getUUID(), townName);
         }
     }
     
@@ -298,11 +335,11 @@ public class TownManager {
             if (team.getName().startsWith("town_")) {
                 String townName = team.getName().substring(5); // Remove "town_" prefix
                 
-                // Check if town exists and has members
+                // Only remove teams if the town doesn't exist at all
+                // Don't remove based on hasMembers as players might not be online yet
                 boolean townExists = towns.containsKey(townName);
-                boolean hasMembers = playerTowns.values().contains(townName);
                 
-                if (!townExists || !hasMembers) {
+                if (!townExists) {
                     teamsToRemove.add(team);
                 }
             }
@@ -476,6 +513,17 @@ public class TownManager {
                             player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 1.0f, 0.8f);
                         } catch (Exception e2) {
                             System.err.println("[FLOWFRAME] Could not play town rank up sound");
+                        }
+                    }
+                } else if ("town_join".equals(soundType)) {
+                    // Try gentle notification sounds for player joining
+                    try {
+                        player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.8f, 1.0f);
+                    } catch (Exception e1) {
+                        try {
+                            player.level().playSound(null, player.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.MASTER, 0.8f, 1.0f);
+                        } catch (Exception e2) {
+                            System.err.println("[FLOWFRAME] Could not play town join sound");
                         }
                     }
                 }
