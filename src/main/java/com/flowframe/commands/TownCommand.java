@@ -12,6 +12,7 @@ import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.ChatFormatting;
 
 import java.util.Arrays;
@@ -77,6 +78,12 @@ public class TownCommand {
                                 .then(Commands.argument("color", StringArgumentType.word())
                                         .suggests(COLOR_SUGGESTIONS)
                                         .executes(TownCommand::editTown))))
+                .then(Commands.literal("relocate")
+                        .requires(Commands.hasPermission(Commands.LEVEL_ALL))
+                        .then(Commands.argument("name", StringArgumentType.word())
+                                .suggests(TOWN_SUGGESTIONS)
+                                .then(Commands.argument("coords", BlockPosArgument.blockPos())
+                                        .executes(TownCommand::relocateTown))))
                 .then(Commands.literal("info")
                         .requires(Commands.hasPermission(Commands.LEVEL_ALL))
                         .then(Commands.argument("name", StringArgumentType.word())
@@ -273,6 +280,36 @@ public class TownCommand {
         return 1;
     }
 
+    private static int relocateTown(CommandContext<CommandSourceStack> context) {
+        if (!(context.getSource().getEntity() instanceof ServerPlayer player)) {
+            context.getSource().sendFailure(Component.literal("This command can only be executed by a player"));
+            return 0;
+        }
+
+        String townName = StringArgumentType.getString(context, "name");
+        BlockPos newCoords = BlockPosArgument.getBlockPos(context, "coords");
+
+        // Check if town exists
+        if (!TownManager.townExists(townName)) {
+            player.sendSystemMessage(Component.literal("§cTown '" + townName + "' does not exist!"));
+            return 0;
+        }
+
+        // Check if player owns the town
+        String ownedTown = TownManager.getPlayerOwnedTown(player.getUUID());
+        if (ownedTown == null || !ownedTown.equals(townName)) {
+            player.sendSystemMessage(Component.literal("§cYou do not own town '" + townName + "'!"));
+            return 0;
+        }
+
+        // Relocate town
+        TownManager.relocateTown(townName, newCoords);
+        player.sendSystemMessage(Component.literal("§aSuccessfully relocated '" + townName + "' to " + 
+                newCoords.getX() + ", " + newCoords.getY() + ", " + newCoords.getZ() + "!"));
+
+        return 1;
+    }
+
     private static int townInfo(CommandContext<CommandSourceStack> context) {
         if (!(context.getSource().getEntity() instanceof ServerPlayer player)) {
             context.getSource().sendFailure(Component.literal("This command can only be executed by a player"));
@@ -296,7 +333,18 @@ public class TownCommand {
         String rank = town.getRank(memberCount);
         int membersToNext = town.getMembersToNextRank(memberCount);
         
+        // Get founder name
+        String founderName = "Unknown";
+        MinecraftServer server = context.getSource().getServer();
+        if (server != null) {
+            ServerPlayer founder = server.getPlayerList().getPlayer(town.getOwner());
+            if (founder != null) {
+                founderName = founder.getName().getString();
+            }
+        }
+        
         player.sendSystemMessage(Component.literal("§6-- " + town.getColor() + "§l" + townName.toUpperCase() + " §6--"));
+        player.sendSystemMessage(Component.literal("§7Founder: " + "§6" + founderName));
         player.sendSystemMessage(Component.literal("§7Rank: " + "§6" + rank));
         player.sendSystemMessage(Component.literal("§7Members: " + "§6" + memberCount));
         

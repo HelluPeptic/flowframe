@@ -9,7 +9,7 @@ public class TownData {
     private final String name;
     private final UUID owner;
     private ChatFormatting color;
-    private final BlockPos coords;
+    private BlockPos coords;
     private final String dimension;
     private int fakeMemberCount = -1; // -1 means use real count
 
@@ -90,5 +90,9 @@ public class TownData {
 
     public boolean hasFakeMemberCount() {
         return fakeMemberCount >= 0;
+    }
+
+    public void setCoords(BlockPos newCoords) {
+        this.coords = newCoords;
     }
 }

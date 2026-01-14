@@ -139,6 +139,14 @@ public class TownManager {
         }
     }
 
+    public static void relocateTown(String name, BlockPos newCoords) {
+        TownData town = towns.get(name);
+        if (town != null) {
+            town.setCoords(newCoords);
+            saveTowns();
+        }
+    }
+
     public static Set<String> getAllTownNames() {
         return new HashSet<>(towns.keySet());
     }
