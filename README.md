@@ -48,30 +48,17 @@ A server-side Minecraft mod for version 1.21.1 that adds various Quality of Life
 - This makes potions much more useful for long-term activities
 - Exceptions: Poison, Instant Damage, and Weakness retain their normal durations
 
-### 9. **Town System**
+### 9. **Sit Command**
+- Use `/sit` to sit down on the ground
+- Can only sit when standing on a solid block
+
+### 10. **Player Riding System** 
+- Right-click another player to ride on their head
+
+### 11. **Town System**
 - Create and join towns to identify community membership
 - Town prefixes appear in chat and above nametags
 - Main command: `/town <create|disband|join|leave|edit|info>
-
-### 10. **Sit Command**
-- Use `/sit` to sit down on the ground with the Minecraft sitting animation
-- Can only sit when standing on a solid block
-- Use `/sit` again or sneak to stand up
-- Automatically stand up when disconnecting from the server
-
-### 11. **Player Riding System** 
-- Right-click another player to ride on their back piggyback style
-- Sneak while riding to dismount
-- Multiple players can stack on top of each other for tower formations
-- Uses Minecraft's built-in riding mechanics with mixin support for player-to-player mounting
-
-### 11. **Player Riding**
-- Right-click another player to ride them (piggyback style)
-- Can create riding towers by right-clicking players who are already being ridden
-- When you right-click someone in a tower, you automatically go to the top
-- Bottom player can sneak to make the entire tower dismount
-- Cannot ride a player who is already sneaking
-- No riding loops (can't ride someone who is already riding another player)
 
 ## Commands
 
