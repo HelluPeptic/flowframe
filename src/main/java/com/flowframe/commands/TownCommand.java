@@ -344,8 +344,8 @@ public class TownCommand {
         }
         
         player.sendSystemMessage(Component.literal("§6-- " + town.getColor() + "§l" + townName.toUpperCase() + " §6--"));
-        player.sendSystemMessage(Component.literal("§7Founder: " + "§6" + founderName));
         player.sendSystemMessage(Component.literal("§7Rank: " + "§6" + rank));
+        player.sendSystemMessage(Component.literal("§7Founder: " + "§6" + founderName));
         player.sendSystemMessage(Component.literal("§7Members: " + "§6" + memberCount));
         
         if (membersToNext > 0) {
