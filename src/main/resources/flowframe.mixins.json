@@ -10,7 +10,8 @@
     "LivingEntityMixin",
     "ServerLevelMixin",
     "FarmBlockMixin",
-    "PotionDurationMixin"
+    "PotionDurationMixin",
+    "EntityRidingMixin"
   ],
   "injectors": {
     "defaultRequire": 1

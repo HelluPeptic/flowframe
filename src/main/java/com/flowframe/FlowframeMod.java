@@ -1,10 +1,13 @@
 package com.flowframe;
 
+import com.flowframe.commands.EndToggleCommand;
 import com.flowframe.commands.FlowframeCommand;
+import com.flowframe.commands.SitCommand;
 import com.flowframe.commands.TownCommand;
 import com.flowframe.commands.TownAdminCommand;
 import com.flowframe.config.FlowframeConfig;
 import com.flowframe.town.TownManager;
+import com.flowframe.util.PlayerRidingManager;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -23,10 +26,15 @@ public class FlowframeMod implements ModInitializer {
 
         // Initialize config
         FlowframeConfig.init();
+        
+        // Initialize player riding system
+        PlayerRidingManager.initialize();
 
         // Register commands
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            EndToggleCommand.register(dispatcher);
             FlowframeCommand.register(dispatcher);
+            SitCommand.register(dispatcher);
             TownCommand.register(dispatcher);
             TownAdminCommand.register(dispatcher);
         });
@@ -48,6 +56,12 @@ public class FlowframeMod implements ModInitializer {
             server.execute(() -> {
                 TownManager.restorePlayerTeamOnJoin(handler.getPlayer());
             });
+        });
+        
+        // Handle player disconnect events to clean up sitting state and riding state
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            SitCommand.onPlayerDisconnect(handler.getPlayer());
+            PlayerRidingManager.onPlayerDisconnect(handler.getPlayer());
         });
 
         LOGGER.info("Flowframe mod initialized!");

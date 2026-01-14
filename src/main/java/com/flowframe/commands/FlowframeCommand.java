@@ -285,8 +285,6 @@ public class FlowframeCommand {
                         .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                         .then(Commands.argument("percentage", DoubleArgumentType.doubleArg(0, 1000))
                                 .executes(FlowframeCommand::setPathBlockSpeed)))
-                .then(Commands.literal("endtoggle")
-                        .executes(FlowframeCommand::toggleEndPortal))
                 .then(Commands.literal("spawner")
                         .then(Commands.literal("add")
                                 .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
@@ -344,27 +342,6 @@ public class FlowframeCommand {
                         percentage, multiplier)),
                 true
         );
-
-        return 1;
-    }
-
-    private static int toggleEndPortal(CommandContext<CommandSourceStack> context) {
-        CommandSourceStack source = context.getSource();
-
-        if (!(source.getEntity() instanceof ServerPlayer player)) {
-            source.sendFailure(Component.literal("This command can only be executed by a player"));
-            return 0;
-        }
-
-        boolean currentState = FlowframeConfig.isEndPortalEnabled(player.getUUID());
-        boolean newState = !currentState;
-        FlowframeConfig.setEndPortalEnabled(player.getUUID(), newState);
-
-        if (newState) {
-            player.sendSystemMessage(Component.literal("§aEnd portals are now enabled for you"));
-        } else {
-            player.sendSystemMessage(Component.literal("§cEnd portals are now disabled for you"));
-        }
 
         return 1;
     }
