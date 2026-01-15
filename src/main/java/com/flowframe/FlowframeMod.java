@@ -8,6 +8,7 @@ import com.flowframe.commands.TownAdminCommand;
 import com.flowframe.config.FlowframeConfig;
 import com.flowframe.town.TownManager;
 import com.flowframe.util.PlayerRidingManager;
+import com.flowframe.util.BlazeSpawnerProtection;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -29,6 +30,9 @@ public class FlowframeMod implements ModInitializer {
         
         // Initialize player riding system
         PlayerRidingManager.initialize();
+        
+        // Initialize blaze spawner protection
+        BlazeSpawnerProtection.initialize();
 
         // Register commands
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
