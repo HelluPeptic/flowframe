@@ -30,6 +30,11 @@ public class PlayerRidingManager {
                 entity instanceof ServerPlayer targetPlayer &&
                 player != entity) {
                 
+                // Check if player has empty hand
+                if (!serverPlayer.getItemInHand(hand).isEmpty()) {
+                    return InteractionResult.PASS;
+                }
+                
                 // Check if the target player is sneaking (wants to be dismounted)
                 if (targetPlayer.isShiftKeyDown()) {
                     return InteractionResult.PASS;
