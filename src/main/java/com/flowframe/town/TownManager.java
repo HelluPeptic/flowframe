@@ -376,6 +376,7 @@ public class TownManager {
                 JsonObject townObj = new JsonObject();
                 townObj.addProperty("name", town.getName());
                 townObj.addProperty("owner", town.getOwner().toString());
+                townObj.addProperty("founderName", town.getFounderName());
                 townObj.addProperty("color", town.getColor().getName());
                 townObj.addProperty("x", town.getCoords().getX());
                 townObj.addProperty("y", town.getCoords().getY());
@@ -438,6 +439,8 @@ public class TownManager {
 
                     String name = townObj.get("name").getAsString();
                     UUID owner = UUID.fromString(townObj.get("owner").getAsString());
+                    // Load founder name with backward compatibility
+                    String founderName = townObj.has("founderName") ? townObj.get("founderName").getAsString() : "Unknown";
                     ChatFormatting color = ChatFormatting.getByName(townObj.get("color").getAsString());
                     BlockPos coords = new BlockPos(
                             townObj.get("x").getAsInt(),
@@ -448,7 +451,7 @@ public class TownManager {
 
                     if (color == null) color = ChatFormatting.WHITE;
 
-                    TownData townData = new TownData(name, owner, color, coords, dimension);
+                    TownData townData = new TownData(name, owner, founderName, color, coords, dimension);
                     
                     // Load fake member count if present
                     if (townObj.has("fakeMemberCount")) {

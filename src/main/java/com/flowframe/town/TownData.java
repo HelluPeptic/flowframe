@@ -8,14 +8,16 @@ import java.util.UUID;
 public class TownData {
     private final String name;
     private final UUID owner;
+    private final String founderName; // Store founder name to display even when offline
     private ChatFormatting color;
     private BlockPos coords;
     private final String dimension;
     private int fakeMemberCount = -1; // -1 means use real count
 
-    public TownData(String name, UUID owner, ChatFormatting color, BlockPos coords, String dimension) {
+    public TownData(String name, UUID owner, String founderName, ChatFormatting color, BlockPos coords, String dimension) {
         this.name = name;
         this.owner = owner;
+        this.founderName = founderName;
         this.color = color;
         this.coords = coords;
         this.dimension = dimension;
@@ -27,6 +29,10 @@ public class TownData {
 
     public UUID getOwner() {
         return owner;
+    }
+
+    public String getFounderName() {
+        return founderName;
     }
 
     public ChatFormatting getColor() {

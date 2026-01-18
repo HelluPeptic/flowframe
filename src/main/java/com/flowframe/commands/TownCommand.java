@@ -128,7 +128,7 @@ public class TownCommand {
             }
 
             // Create town
-            TownData townData = new TownData(name, player.getUUID(), color, coords, player.level().dimension().toString());
+            TownData townData = new TownData(name, player.getUUID(), player.getName().getString(), color, coords, player.level().dimension().toString());
             TownManager.createTown(townData);
             TownManager.setPlayerTown(player.getUUID(), name);
 
@@ -333,15 +333,8 @@ public class TownCommand {
         String rank = town.getRank(memberCount);
         int membersToNext = town.getMembersToNextRank(memberCount);
         
-        // Get founder name
-        String founderName = "Unknown";
-        MinecraftServer server = context.getSource().getServer();
-        if (server != null) {
-            ServerPlayer founder = server.getPlayerList().getPlayer(town.getOwner());
-            if (founder != null) {
-                founderName = founder.getName().getString();
-            }
-        }
+        // Use stored founder name
+        String founderName = town.getFounderName();
         
         player.sendSystemMessage(Component.literal("§6-- " + town.getColor() + "§l" + townName.toUpperCase() + " §6--"));
         player.sendSystemMessage(Component.literal("§7Rank: " + "§6" + rank));

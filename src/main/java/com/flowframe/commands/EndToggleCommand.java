@@ -11,25 +11,21 @@ import net.minecraft.server.level.ServerPlayer;
 public class EndToggleCommand {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("endtoggle")
+            .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS)) // Require operator level 2
             .executes(EndToggleCommand::execute));
     }
     
     private static int execute(CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();
         
-        if (!(source.getEntity() instanceof ServerPlayer player)) {
-            source.sendFailure(Component.literal("This command can only be executed by a player"));
-            return 0;
-        }
-        
-        boolean currentState = FlowframeConfig.isEndPortalEnabled(player.getUUID());
+        boolean currentState = FlowframeConfig.isEndPortalEnabled();
         boolean newState = !currentState;
-        FlowframeConfig.setEndPortalEnabled(player.getUUID(), newState);
+        FlowframeConfig.setEndPortalEnabled(newState);
         
         if (newState) {
-            player.sendSystemMessage(Component.literal("§aEnd portals are now enabled for you"));
+            source.sendSuccess(() -> Component.literal("§aEnd portals are now enabled"), true);
         } else {
-            player.sendSystemMessage(Component.literal("§cEnd portals are now disabled for you"));
+            source.sendSuccess(() -> Component.literal("§cEnd portals are now disabled"), true);
         }
         
         return 1;

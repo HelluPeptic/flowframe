@@ -17,12 +17,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class EndPortalBlockMixin {
     
     /**
-     * Prevents players from entering the End portal if they have disabled it with /endtoggle
+     * Prevents players from entering the End portal if it's globally disabled by operators
      */
     @Inject(method = "entityInside", at = @At("HEAD"), cancellable = true)
     public void onEntityInside(BlockState state, Level level, BlockPos pos, Entity entity, InsideBlockEffectApplier effectApplier, boolean fromInsideBlock, CallbackInfo ci) {
         if (entity instanceof ServerPlayer player) {
-            if (!FlowframeConfig.isEndPortalEnabled(player.getUUID())) {
+            if (!FlowframeConfig.isEndPortalEnabled()) {
                 ci.cancel();
             }
         }
