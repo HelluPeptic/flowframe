@@ -41,17 +41,4 @@ public abstract class EntityRidingMixin {
             serverPlayer.connection.send(new ClientboundSetPassengersPacket(entity));
         }
     }
-    
-    // Override passenger attachment point to position players higher
-    @Inject(method = "getPassengerAttachmentPoint", at = @At("RETURN"), cancellable = true)
-    private void adjustPlayerRidingHeight(Entity passenger, net.minecraft.world.entity.EntityDimensions dimensions, float scaleFactor, CallbackInfoReturnable<Vec3> cir) {
-        Entity vehicle = (Entity) (Object) this;
-        
-        // Only adjust for player-on-player riding
-        if (vehicle instanceof Player && passenger instanceof Player) {
-            Vec3 original = cir.getReturnValue();
-            // Return a significantly higher attachment point to prevent override
-            cir.setReturnValue(new Vec3(original.x, original.y + 1.2, original.z));
-        }
-    }
 }

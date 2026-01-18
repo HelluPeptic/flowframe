@@ -40,8 +40,11 @@ public class PlayerRidingManager {
                     return InteractionResult.PASS;
                 }
                 
-                // Try to mount the target player
-                if (attemptPlayerRiding(serverPlayer, targetPlayer)) {
+                // If target is part of a tower, climb to the top
+                ServerPlayer topPlayer = getTopOfTower(targetPlayer);
+                
+                // Try to mount the top player in the tower
+                if (attemptPlayerRiding(serverPlayer, topPlayer)) {
                     return InteractionResult.SUCCESS;
                 }
                 
@@ -103,6 +106,36 @@ public class PlayerRidingManager {
         }
 
         return false;
+    }
+    
+    /**
+     * Find the top player in a riding tower
+     */
+    private static ServerPlayer getTopOfTower(ServerPlayer player) {
+        ServerPlayer current = player;
+        
+        // First, go to the bottom of the tower
+        while (current.isPassenger() && current.getVehicle() instanceof ServerPlayer) {
+            current = (ServerPlayer) current.getVehicle();
+        }
+        
+        // Then, climb to the top
+        while (!current.getPassengers().isEmpty()) {
+            ServerPlayer topPassenger = null;
+            for (net.minecraft.world.entity.Entity passenger : current.getPassengers()) {
+                if (passenger instanceof ServerPlayer) {
+                    topPassenger = (ServerPlayer) passenger;
+                    break;
+                }
+            }
+            if (topPassenger != null) {
+                current = topPassenger;
+            } else {
+                break;
+            }
+        }
+        
+        return current;
     }
     
     /**
