@@ -603,35 +603,34 @@ public class TownManager {
             // Try to play sound - use different sounds based on type
             try {
                 if ("town_founded".equals(soundType)) {
-                    // Try various ding/notification sounds for town founding (quieter)
+                    // Very quiet XP pickup or item pickup for town founding
                     try {
-                        player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.3f, 1.2f);
+                        player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.1f, 1.2f);
                     } catch (Exception e1) {
                         try {
-                            player.level().playSound(null, player.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.MASTER, 0.3f, 1.5f);
+                            player.level().playSound(null, player.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.MASTER, 0.1f, 1.5f);
                         } catch (Exception e2) {
-                            // Last resort - just any sound
                             System.err.println("[FLOWFRAME] Could not play town founding sound");
                         }
                     }
                 } else if ("town_rankup".equals(soundType)) {
-                    // Try level up sounds for rank up (quieter)
+                    // Very quiet level up or XP pickup for rank up
                     try {
-                        player.level().playSound(null, player.blockPosition(), SoundEvents.PLAYER_LEVELUP, SoundSource.MASTER, 0.4f, 1.0f);
+                        player.level().playSound(null, player.blockPosition(), SoundEvents.PLAYER_LEVELUP, SoundSource.MASTER, 0.1f, 1.0f);
                     } catch (Exception e1) {
                         try {
-                            player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.4f, 0.8f);
+                            player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.1f, 0.8f);
                         } catch (Exception e2) {
                             System.err.println("[FLOWFRAME] Could not play town rank up sound");
                         }
                     }
                 } else if ("town_join".equals(soundType)) {
-                    // Try gentle notification sounds for player joining (quieter)
+                    // Very quiet XP pickup or item pickup for joining
                     try {
-                        player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.25f, 1.0f);
+                        player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.1f, 1.0f);
                     } catch (Exception e1) {
                         try {
-                            player.level().playSound(null, player.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.MASTER, 0.25f, 1.0f);
+                            player.level().playSound(null, player.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.MASTER, 0.1f, 1.0f);
                         } catch (Exception e2) {
                             System.err.println("[FLOWFRAME] Could not play town join sound");
                         }

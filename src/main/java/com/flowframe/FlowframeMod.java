@@ -43,13 +43,15 @@ public class FlowframeMod implements ModInitializer {
             TownAdminCommand.register(dispatcher);
         });
 
-        // Register server lifecycle events for town system
+        // Register server lifecycle events for town system and config
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            FlowframeConfig.load(server);
             TownManager.initialize(server);
             LOGGER.info("Town system initialized");
         });
-        
+
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            FlowframeConfig.save();
             TownManager.shutdown();
             LOGGER.info("Town system shut down");
         });
