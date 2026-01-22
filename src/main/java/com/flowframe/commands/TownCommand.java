@@ -381,7 +381,7 @@ public class TownCommand {
             return 0;
         }
 
-        List<String> members = TownManager.getTownMembers(townName);
+        List<TownManager.TownMember> members = TownManager.getTownMembers(townName);
         int memberCount = TownManager.getTownMemberCount(townName);
         String rank = town.getRank(memberCount);
 
@@ -393,9 +393,22 @@ public class TownCommand {
         if (members.isEmpty()) {
             player.sendSystemMessage(Component.literal("§7No members found."));
         } else {
-            for (int i = 0; i < members.size(); i++) {
-                String member = members.get(i);
-                player.sendSystemMessage(Component.literal("§f" + member));
+            for (TownManager.TownMember member : members) {
+                String color;
+                String suffix = "";
+                
+                if (member.isFounder()) {
+                    suffix = " (Founder)";
+                }
+                
+                // Set color based on online status
+                if (member.isOnline()) {
+                    color = "§a"; // Green for online
+                } else {
+                    color = "§7"; // Gray for offline
+                }
+                
+                player.sendSystemMessage(Component.literal(color + member.getName() + suffix));
             }
         }
 

@@ -251,38 +251,69 @@ public class TownManager {
         }
     }
 
-    public static List<String> getTownMembers(String townName) {
-        List<String> members = new ArrayList<>();
+    // Helper class to represent town member information
+    public static class TownMember {
+        private final String name;
+        private final boolean isOnline;
+        private final boolean isFounder;
         
-        // Add the town owner/founder first
+        public TownMember(String name, boolean isOnline, boolean isFounder) {
+            this.name = name;
+            this.isOnline = isOnline;
+            this.isFounder = isFounder;
+        }
+        
+        public String getName() { return name; }
+        public boolean isOnline() { return isOnline; }
+        public boolean isFounder() { return isFounder; }
+    }
+
+    public static List<TownMember> getTownMembers(String townName) {
+        List<TownMember> members = new ArrayList<>();
+        
         TownData town = getTown(townName);
         if (town == null) return members;
         
-        members.add(town.getFounderName() + " (Founder)");
-        
-        // Add other members
+        // Add all members (including founder)
         for (Map.Entry<UUID, String> entry : playerTowns.entrySet()) {
             if (entry.getValue().equals(townName)) {
                 UUID playerUuid = entry.getKey();
+                boolean isFounder = town.getOwner().equals(playerUuid);
                 
-                // Skip the owner (already added as founder)
-                if (town.getOwner().equals(playerUuid)) continue;
+                // Get player name and online status
+                String playerName;
+                boolean isOnline = false;
                 
-                // Get player name
-                String playerName = "Unknown Player";
                 if (currentServer != null) {
                     ServerPlayer player = currentServer.getPlayerList().getPlayer(playerUuid);
                     if (player != null) {
                         playerName = player.getName().getString();
+                        isOnline = true;
                     } else {
-                        // Try to get name from stored data or use UUID as fallback
-                        playerName = playerUuid.toString().substring(0, 8) + "...";
+                        // For offline players, use founder name if this is the founder, otherwise generic name
+                        playerName = isFounder ? town.getFounderName() : "Offline Player";
                     }
+                } else {
+                    playerName = isFounder ? town.getFounderName() : "Unknown Player";
                 }
                 
-                members.add(playerName);
+                members.add(new TownMember(playerName, isOnline, isFounder));
             }
         }
+        
+        // Sort members: online first, then offline, with founder always first within each group
+        members.sort((a, b) -> {
+            // Founder always comes first regardless of online status
+            if (a.isFounder() && !b.isFounder()) return -1;
+            if (!a.isFounder() && b.isFounder()) return 1;
+            
+            // Then sort by online status (online first)
+            if (a.isOnline() && !b.isOnline()) return -1;
+            if (!a.isOnline() && b.isOnline()) return 1;
+            
+            // Finally sort alphabetically by name
+            return a.getName().compareToIgnoreCase(b.getName());
+        });
         
         return members;
     }
