@@ -16,6 +16,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.ChatFormatting;
 
 import java.util.Arrays;
+import java.util.List;
 
 public class TownCommand {
 
@@ -88,7 +89,16 @@ public class TownCommand {
                         .requires(Commands.hasPermission(Commands.LEVEL_ALL))
                         .then(Commands.argument("name", StringArgumentType.word())
                                 .suggests(TOWN_SUGGESTIONS)
-                                .executes(TownCommand::townInfo))));
+                                .executes(TownCommand::townInfo)))
+                .then(Commands.literal("list")
+                        .requires(Commands.hasPermission(Commands.LEVEL_ALL))
+                        .then(Commands.argument("name", StringArgumentType.word())
+                                .suggests(TOWN_SUGGESTIONS)
+                                .executes(TownCommand::listTownMembers)))
+                .then(Commands.literal("transferownership")
+                        .requires(Commands.hasPermission(Commands.LEVEL_ALL))
+                        .then(Commands.argument("player", StringArgumentType.word())
+                                .executes(TownCommand::transferOwnership))));
     }
 
     private static int createTown(CommandContext<CommandSourceStack> context) {
@@ -338,7 +348,7 @@ public class TownCommand {
         
         player.sendSystemMessage(Component.literal("§6-- " + town.getColor() + "§l" + townName.toUpperCase() + " §6--"));
         player.sendSystemMessage(Component.literal("§7Rank: " + "§6" + rank));
-        player.sendSystemMessage(Component.literal("§7Founder: " + "§6" + founderName));
+        player.sendSystemMessage(Component.literal("§7Owner: " + "§6" + founderName));
         player.sendSystemMessage(Component.literal("§7Members: " + "§6" + memberCount));
         
         if (membersToNext > 0) {
@@ -350,6 +360,95 @@ public class TownCommand {
         player.sendSystemMessage(Component.literal("§7Location: " +  "§6" + town.getCoords().getX() + ", " + "§6" + town.getCoords().getY() + ", " + "§6" + town.getCoords().getZ()));
 
         return 1;
+    }
+
+    private static int listTownMembers(CommandContext<CommandSourceStack> context) {
+        if (!(context.getSource().getEntity() instanceof ServerPlayer player)) {
+            context.getSource().sendFailure(Component.literal("This command can only be executed by a player"));
+            return 0;
+        }
+
+        String townName = StringArgumentType.getString(context, "name");
+
+        if (!TownManager.townExists(townName)) {
+            player.sendSystemMessage(Component.literal("§cTown '" + townName + "' does not exist!"));
+            return 0;
+        }
+
+        TownData town = TownManager.getTown(townName);
+        if (town == null) {
+            player.sendSystemMessage(Component.literal("§cError loading town data!"));
+            return 0;
+        }
+
+        List<String> members = TownManager.getTownMembers(townName);
+        int memberCount = TownManager.getTownMemberCount(townName);
+        String rank = town.getRank(memberCount);
+
+        // Display header
+        player.sendSystemMessage(Component.literal("§6-- " + town.getColor() + "§l" + townName.toUpperCase() + " §6MEMBERS --"));
+        player.sendSystemMessage(Component.literal(""));
+
+        // Display members
+        if (members.isEmpty()) {
+            player.sendSystemMessage(Component.literal("§7No members found."));
+        } else {
+            for (int i = 0; i < members.size(); i++) {
+                String member = members.get(i);
+                player.sendSystemMessage(Component.literal("§f" + member));
+            }
+        }
+
+        return 1;
+    }
+
+    private static int transferOwnership(CommandContext<CommandSourceStack> context) {
+        if (!(context.getSource().getEntity() instanceof ServerPlayer player)) {
+            context.getSource().sendFailure(Component.literal("This command can only be executed by a player"));
+            return 0;
+        }
+
+        String targetPlayerName = StringArgumentType.getString(context, "player");
+
+        // Check if player owns a town
+        String ownedTown = TownManager.getPlayerOwnedTown(player.getUUID());
+        if (ownedTown == null) {
+            player.sendSystemMessage(Component.literal("§cYou do not own a town!"));
+            return 0;
+        }
+
+        // Get target player
+        ServerPlayer targetPlayer = context.getSource().getServer().getPlayerList().getPlayerByName(targetPlayerName);
+        if (targetPlayer == null) {
+            player.sendSystemMessage(Component.literal("§cPlayer '" + targetPlayerName + "' is not online!"));
+            return 0;
+        }
+
+        // Check if target player is a member of the same town
+        String targetPlayerTown = TownManager.getPlayerTown(targetPlayer.getUUID());
+        if (!ownedTown.equals(targetPlayerTown)) {
+            player.sendSystemMessage(Component.literal("§cPlayer '" + targetPlayerName + "' is not a member of your town!"));
+            return 0;
+        }
+
+        // Transfer ownership
+        boolean success = TownManager.transferTownOwnership(ownedTown, player.getUUID(), targetPlayer.getUUID(), targetPlayerName);
+        if (success) {
+            player.sendSystemMessage(Component.literal("§aSuccessfully transferred ownership of '" + ownedTown + "' to " + targetPlayerName + "!"));
+            targetPlayer.sendSystemMessage(Component.literal("§aYou are now the owner of '" + ownedTown + "'!"));
+            
+            // Notify other town members
+            TownData town = TownManager.getTown(ownedTown);
+            if (town != null) {
+                TownManager.broadcastToTown(ownedTown, 
+                    Component.literal(town.getColor() + ownedTown + " §6ownership has been transferred to " + targetPlayerName + "!"),
+                    player.getUUID(), targetPlayer.getUUID());
+            }
+        } else {
+            player.sendSystemMessage(Component.literal("§cFailed to transfer ownership. Please try again."));
+        }
+
+        return success ? 1 : 0;
     }
 
     private static ChatFormatting parseChatColor(String colorName) {

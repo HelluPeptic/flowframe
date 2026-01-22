@@ -7,8 +7,8 @@ import java.util.UUID;
 
 public class TownData {
     private final String name;
-    private final UUID owner;
-    private final String founderName; // Store founder name to display even when offline
+    private UUID owner; // Made non-final to allow ownership transfer
+    private final String founderName; // Store original founder name, never changes
     private ChatFormatting color;
     private BlockPos coords;
     private final String dimension;
@@ -100,5 +100,9 @@ public class TownData {
 
     public void setCoords(BlockPos newCoords) {
         this.coords = newCoords;
+    }
+
+    public void setOwner(UUID newOwner) {
+        this.owner = newOwner;
     }
 }

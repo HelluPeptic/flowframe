@@ -251,6 +251,74 @@ public class TownManager {
         }
     }
 
+    public static List<String> getTownMembers(String townName) {
+        List<String> members = new ArrayList<>();
+        
+        // Add the town owner/founder first
+        TownData town = getTown(townName);
+        if (town == null) return members;
+        
+        members.add(town.getFounderName() + " (Founder)");
+        
+        // Add other members
+        for (Map.Entry<UUID, String> entry : playerTowns.entrySet()) {
+            if (entry.getValue().equals(townName)) {
+                UUID playerUuid = entry.getKey();
+                
+                // Skip the owner (already added as founder)
+                if (town.getOwner().equals(playerUuid)) continue;
+                
+                // Get player name
+                String playerName = "Unknown Player";
+                if (currentServer != null) {
+                    ServerPlayer player = currentServer.getPlayerList().getPlayer(playerUuid);
+                    if (player != null) {
+                        playerName = player.getName().getString();
+                    } else {
+                        // Try to get name from stored data or use UUID as fallback
+                        playerName = playerUuid.toString().substring(0, 8) + "...";
+                    }
+                }
+                
+                members.add(playerName);
+            }
+        }
+        
+        return members;
+    }
+
+    public static boolean transferTownOwnership(String townName, UUID currentOwner, UUID newOwner, String newOwnerName) {
+        TownData town = getTown(townName);
+        if (town == null || !town.getOwner().equals(currentOwner)) {
+            return false;
+        }
+
+        // Update ownership (founder name remains the original founder)
+        town.setOwner(newOwner);
+        saveTowns();
+
+        return true;
+    }
+
+    public static void broadcastToTown(String townName, Component message, UUID... excludePlayers) {
+        if (currentServer == null) return;
+        
+        Set<UUID> excludeSet = new HashSet<>();
+        for (UUID uuid : excludePlayers) {
+            excludeSet.add(uuid);
+        }
+
+        // Send message to all members of the town
+        for (Map.Entry<UUID, String> entry : playerTowns.entrySet()) {
+            if (entry.getValue().equals(townName) && !excludeSet.contains(entry.getKey())) {
+                ServerPlayer player = currentServer.getPlayerList().getPlayer(entry.getKey());
+                if (player != null) {
+                    player.sendSystemMessage(message);
+                }
+            }
+        }
+    }
+
     public static TownData getPlayerTownData(UUID playerUuid) {
         String townName = getPlayerTown(playerUuid);
         return townName != null ? getTown(townName) : null;
@@ -504,35 +572,35 @@ public class TownManager {
             // Try to play sound - use different sounds based on type
             try {
                 if ("town_founded".equals(soundType)) {
-                    // Try various ding/notification sounds for town founding
+                    // Try various ding/notification sounds for town founding (quieter)
                     try {
-                        player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 1.0f, 1.2f);
+                        player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.3f, 1.2f);
                     } catch (Exception e1) {
                         try {
-                            player.level().playSound(null, player.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.MASTER, 1.0f, 1.5f);
+                            player.level().playSound(null, player.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.MASTER, 0.3f, 1.5f);
                         } catch (Exception e2) {
                             // Last resort - just any sound
                             System.err.println("[FLOWFRAME] Could not play town founding sound");
                         }
                     }
                 } else if ("town_rankup".equals(soundType)) {
-                    // Try level up sounds for rank up
+                    // Try level up sounds for rank up (quieter)
                     try {
-                        player.level().playSound(null, player.blockPosition(), SoundEvents.PLAYER_LEVELUP, SoundSource.MASTER, 1.0f, 1.0f);
+                        player.level().playSound(null, player.blockPosition(), SoundEvents.PLAYER_LEVELUP, SoundSource.MASTER, 0.4f, 1.0f);
                     } catch (Exception e1) {
                         try {
-                            player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 1.0f, 0.8f);
+                            player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.4f, 0.8f);
                         } catch (Exception e2) {
                             System.err.println("[FLOWFRAME] Could not play town rank up sound");
                         }
                     }
                 } else if ("town_join".equals(soundType)) {
-                    // Try gentle notification sounds for player joining
+                    // Try gentle notification sounds for player joining (quieter)
                     try {
-                        player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.8f, 1.0f);
+                        player.level().playSound(null, player.blockPosition(), SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.MASTER, 0.25f, 1.0f);
                     } catch (Exception e1) {
                         try {
-                            player.level().playSound(null, player.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.MASTER, 0.8f, 1.0f);
+                            player.level().playSound(null, player.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.MASTER, 0.25f, 1.0f);
                         } catch (Exception e2) {
                             System.err.println("[FLOWFRAME] Could not play town join sound");
                         }
