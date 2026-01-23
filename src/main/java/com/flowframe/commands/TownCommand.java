@@ -394,11 +394,15 @@ public class TownCommand {
             player.sendSystemMessage(Component.literal("§7No members found."));
         } else {
             for (TownManager.TownMember member : members) {
+                String prefix;
                 String color;
                 String suffix = "";
                 
                 if (member.isFounder()) {
+                    prefix = "§6★ ";
                     suffix = " (Founder)";
+                } else {
+                    prefix = "§7• ";
                 }
                 
                 // Set color based on online status
@@ -408,7 +412,7 @@ public class TownCommand {
                     color = "§7"; // Gray for offline
                 }
                 
-                player.sendSystemMessage(Component.literal(color + member.getName() + suffix));
+                player.sendSystemMessage(Component.literal(prefix + color + member.getName() + suffix));
             }
         }
 

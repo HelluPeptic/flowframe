@@ -56,8 +56,11 @@ public class FlowframeMod implements ModInitializer {
             LOGGER.info("Town system shut down");
         });
 
-        // Handle player join events to restore team prefixes
+        // Handle player join events to restore team prefixes and cache player names
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            // Cache the player's name for offline reference
+            TownManager.cachePlayerName(handler.getPlayer().getUUID(), handler.getPlayer().getName().getString());
+            
             // Delay team restoration by 1 tick to ensure player is fully loaded
             server.execute(() -> {
                 TownManager.restorePlayerTeamOnJoin(handler.getPlayer());

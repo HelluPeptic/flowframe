@@ -1,33 +1,43 @@
 package com.flowframe.town;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonParser;
-import net.minecraft.ChatFormatting;
-import net.minecraft.core.BlockPos;
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.scores.PlayerTeam;
-import net.minecraft.world.scores.Scoreboard;
-import net.minecraft.network.chat.Component;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
-import net.minecraft.sounds.SoundEvent;
-import net.minecraft.core.Holder;
-import net.minecraft.network.protocol.game.ClientboundSoundPacket;
-
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.util.*;
+import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.google.gson.reflect.TypeToken;
+
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.Scoreboard;
 
 public class TownManager {
     private static final Map<String, TownData> towns = new ConcurrentHashMap<>();
     private static final Map<UUID, String> playerTowns = new ConcurrentHashMap<>();
+    // Map to store player names by UUID for offline players
+    private static final Map<UUID, String> playerNames = new ConcurrentHashMap<>();
     private static MinecraftServer currentServer = null;
 
     // Persistence
@@ -45,12 +55,14 @@ public class TownManager {
         currentServer = server;
         loadTowns();
         loadPlayerTowns();
+        loadPlayerNamesCache();
         updateAllPlayerTeams();
     }
 
     public static void shutdown() {
         saveTowns();
         savePlayerTowns();
+        savePlayerNamesCache();
     }
 
     // Town management
@@ -278,7 +290,7 @@ public class TownManager {
         for (Map.Entry<UUID, String> entry : playerTowns.entrySet()) {
             if (entry.getValue().equals(townName)) {
                 UUID playerUuid = entry.getKey();
-                boolean isFounder = town.getOwner().equals(playerUuid);
+                boolean isOwner = town.getOwner().equals(playerUuid);
                 
                 // Get player name and online status
                 String playerName;
@@ -290,14 +302,22 @@ public class TownManager {
                         playerName = player.getName().getString();
                         isOnline = true;
                     } else {
-                        // For offline players, use founder name if this is the founder, otherwise generic name
-                        playerName = isFounder ? town.getFounderName() : "Offline Player";
+                        // For offline players, try to get name from server cache
+                        if (isOwner) {
+                            playerName = town.getFounderName();
+                        } else {
+                            // Try to get the player name from the server's profile cache
+                            playerName = getOfflinePlayerName(playerUuid);
+                            if (playerName == null) {
+                                playerName = "Unknown Player";
+                            }
+                        }
                     }
                 } else {
-                    playerName = isFounder ? town.getFounderName() : "Unknown Player";
+                    playerName = isOwner ? town.getFounderName() : "Unknown Player";
                 }
                 
-                members.add(new TownMember(playerName, isOnline, isFounder));
+                members.add(new TownMember(playerName, isOnline, isOwner));
             }
         }
         
@@ -316,6 +336,25 @@ public class TownManager {
         });
         
         return members;
+    }
+
+    // Method to cache player names when they're online
+    public static void cachePlayerName(UUID playerUuid, String playerName) {
+        playerNames.put(playerUuid, playerName);
+    }
+    
+    // Helper method to get offline player names
+    private static String getOfflinePlayerName(UUID playerUuid) {
+        // First check our cache
+        String cachedName = playerNames.get(playerUuid);
+        if (cachedName != null) {
+            return cachedName;
+        }
+        
+        // If not in cache, return a UUID-based identifier
+        // This at least distinguishes between different offline players
+        String uuidStr = playerUuid.toString();
+        return "Player_" + uuidStr.substring(0, 8);
     }
 
     public static boolean transferTownOwnership(String townName, UUID currentOwner, UUID newOwner, String newOwnerName) {
@@ -590,6 +629,43 @@ public class TownManager {
 
         } catch (Exception e) {
             System.err.println("[FLOWFRAME] Failed to load player towns: " + e.getMessage());
+        }
+    }
+    
+    private static void savePlayerNamesCache() {
+        File worldDir = new File(System.getProperty("user.dir"), "world");
+        File cacheFile = new File(worldDir, "flowframe_player_names.json");
+        
+        try {
+            Gson gson = new Gson();
+            Type type = new TypeToken<Map<UUID, String>>() {}.getType();
+            String json = gson.toJson(playerNames, type);
+            
+            Files.write(cacheFile.toPath(), json.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            System.err.println("[FLOWFRAME] Failed to save player names cache: " + e.getMessage());
+        }
+    }
+    
+    private static void loadPlayerNamesCache() {
+        File worldDir = new File(System.getProperty("user.dir"), "world");
+        File cacheFile = new File(worldDir, "flowframe_player_names.json");
+        
+        if (!cacheFile.exists()) return;
+        
+        try {
+            String json = Files.readString(cacheFile.toPath(), StandardCharsets.UTF_8);
+            Gson gson = new Gson();
+            Type type = new TypeToken<Map<UUID, String>>() {}.getType();
+            Map<UUID, String> loaded = gson.fromJson(json, type);
+            
+            if (loaded != null) {
+                playerNames.clear();
+                playerNames.putAll(loaded);
+                System.out.println("[FLOWFRAME] Loaded " + loaded.size() + " cached player names");
+            }
+        } catch (Exception e) {
+            System.err.println("[FLOWFRAME] Failed to load player names cache: " + e.getMessage());
         }
     }
     
