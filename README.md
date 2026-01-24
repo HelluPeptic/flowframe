@@ -48,11 +48,7 @@ A server-side Minecraft mod for version 1.21.1 that adds various Quality of Life
 - This makes potions much more useful for long-term activities
 - Exceptions: Poison, Instant Damage, and Weakness retain their normal durations
 
-### 9. **Sit Command**
-- Use `/sit` to sit down on the ground
-- Can only sit when standing on a solid block
-
-### 10. **Player Riding System** 
+### 9. **Player Riding System** 
 - Right-click another player to ride on their head
 
 ### 11. **Town System**

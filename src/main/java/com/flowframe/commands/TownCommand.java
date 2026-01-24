@@ -343,12 +343,12 @@ public class TownCommand {
         String rank = town.getRank(memberCount);
         int membersToNext = town.getMembersToNextRank(memberCount);
         
-        // Use stored founder name
-        String founderName = town.getFounderName();
+        // Use stored owner name
+        String ownerName = town.getOwnerName();
         
         player.sendSystemMessage(Component.literal("§6-- " + town.getColor() + "§l" + townName.toUpperCase() + " §6--"));
         player.sendSystemMessage(Component.literal("§7Rank: " + "§6" + rank));
-        player.sendSystemMessage(Component.literal("§7Owner: " + "§6" + founderName));
+        player.sendSystemMessage(Component.literal("§7Owner: " + "§6" + ownerName));
         player.sendSystemMessage(Component.literal("§7Members: " + "§6" + memberCount));
         
         if (membersToNext > 0) {
@@ -398,9 +398,9 @@ public class TownCommand {
                 String color;
                 String suffix = "";
                 
-                if (member.isFounder()) {
+                if (member.isOwner()) {
                     prefix = "§6★ ";
-                    suffix = " (Founder)";
+                    suffix = " (Owner)";
                 } else {
                     prefix = "§7• ";
                 }

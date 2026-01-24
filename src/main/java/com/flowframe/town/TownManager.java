@@ -142,8 +142,10 @@ public class TownManager {
                 String teamName = "town_" + name.toLowerCase();
                 PlayerTeam team = scoreboard.getPlayerTeam(teamName);
                 if (team != null) {
-                    team.setColor(color);
-                    team.setPlayerPrefix(Component.literal(town.getFormattedPrefix() + " "));
+                    // Keep team color as white so player names stay white
+                    team.setColor(ChatFormatting.WHITE);
+                    // Update prefix with new color and reset to white for player name
+                    team.setPlayerPrefix(Component.literal(town.getFormattedPrefix() + " §f"));
                 }
             }
             
@@ -267,17 +269,17 @@ public class TownManager {
     public static class TownMember {
         private final String name;
         private final boolean isOnline;
-        private final boolean isFounder;
+        private final boolean isOwner;
         
-        public TownMember(String name, boolean isOnline, boolean isFounder) {
+        public TownMember(String name, boolean isOnline, boolean isOwner) {
             this.name = name;
             this.isOnline = isOnline;
-            this.isFounder = isFounder;
+            this.isOwner = isOwner;
         }
         
         public String getName() { return name; }
         public boolean isOnline() { return isOnline; }
-        public boolean isFounder() { return isFounder; }
+        public boolean isOwner() { return isOwner; }
     }
 
     public static List<TownMember> getTownMembers(String townName) {
@@ -286,7 +288,7 @@ public class TownManager {
         TownData town = getTown(townName);
         if (town == null) return members;
         
-        // Add all members (including founder)
+        // Add all members (including owner)
         for (Map.Entry<UUID, String> entry : playerTowns.entrySet()) {
             if (entry.getValue().equals(townName)) {
                 UUID playerUuid = entry.getKey();
@@ -304,7 +306,7 @@ public class TownManager {
                     } else {
                         // For offline players, try to get name from server cache
                         if (isOwner) {
-                            playerName = town.getFounderName();
+                            playerName = town.getOwnerName();
                         } else {
                             // Try to get the player name from the server's profile cache
                             playerName = getOfflinePlayerName(playerUuid);
@@ -314,18 +316,18 @@ public class TownManager {
                         }
                     }
                 } else {
-                    playerName = isOwner ? town.getFounderName() : "Unknown Player";
+                    playerName = isOwner ? town.getOwnerName() : "Unknown Player";
                 }
                 
                 members.add(new TownMember(playerName, isOnline, isOwner));
             }
         }
         
-        // Sort members: online first, then offline, with founder always first within each group
+        // Sort members: online first, then offline, with owner always first within each group
         members.sort((a, b) -> {
-            // Founder always comes first regardless of online status
-            if (a.isFounder() && !b.isFounder()) return -1;
-            if (!a.isFounder() && b.isFounder()) return 1;
+            // Owner always comes first regardless of online status
+            if (a.isOwner() && !b.isOwner()) return -1;
+            if (!a.isOwner() && b.isOwner()) return 1;
             
             // Then sort by online status (online first)
             if (a.isOnline() && !b.isOnline()) return -1;
@@ -341,6 +343,11 @@ public class TownManager {
     // Method to cache player names when they're online
     public static void cachePlayerName(UUID playerUuid, String playerName) {
         playerNames.put(playerUuid, playerName);
+    }
+    
+    // Public method to get cached player names for admin commands
+    public static String getCachedPlayerName(UUID playerUuid) {
+        return getOfflinePlayerName(playerUuid);
     }
     
     // Helper method to get offline player names
@@ -363,7 +370,7 @@ public class TownManager {
             return false;
         }
 
-        // Update ownership (founder name remains the original founder)
+        // Update ownership (owner name remains the original owner)
         town.setOwner(newOwner);
         saveTowns();
 
@@ -412,8 +419,10 @@ public class TownManager {
         }
         
         // Always update team properties to ensure they're current
-        team.setColor(town.getColor());
-        team.setPlayerPrefix(Component.literal(town.getFormattedPrefix() + " "));
+        // Set team color to white so player names stay white
+        team.setColor(ChatFormatting.WHITE);
+        // Prefix includes town color and resets to white for player name
+        team.setPlayerPrefix(Component.literal(town.getFormattedPrefix() + " §f"));
         
         // Add player to team if they're online
         ServerPlayer player = currentServer.getPlayerList().getPlayer(playerUuid);
@@ -514,7 +523,7 @@ public class TownManager {
                 JsonObject townObj = new JsonObject();
                 townObj.addProperty("name", town.getName());
                 townObj.addProperty("owner", town.getOwner().toString());
-                townObj.addProperty("founderName", town.getFounderName());
+                townObj.addProperty("ownerName", town.getOwnerName());
                 townObj.addProperty("color", town.getColor().getName());
                 townObj.addProperty("x", town.getCoords().getX());
                 townObj.addProperty("y", town.getCoords().getY());
@@ -577,8 +586,8 @@ public class TownManager {
 
                     String name = townObj.get("name").getAsString();
                     UUID owner = UUID.fromString(townObj.get("owner").getAsString());
-                    // Load founder name with backward compatibility
-                    String founderName = townObj.has("founderName") ? townObj.get("founderName").getAsString() : "Unknown";
+                    // Load owner name with backward compatibility
+                    String ownerName = townObj.has("ownerName") ? townObj.get("ownerName").getAsString() : "Unknown";
                     ChatFormatting color = ChatFormatting.getByName(townObj.get("color").getAsString());
                     BlockPos coords = new BlockPos(
                             townObj.get("x").getAsInt(),
@@ -589,7 +598,7 @@ public class TownManager {
 
                     if (color == null) color = ChatFormatting.WHITE;
 
-                    TownData townData = new TownData(name, owner, founderName, color, coords, dimension);
+                    TownData townData = new TownData(name, owner, ownerName, color, coords, dimension);
                     
                     // Load fake member count if present
                     if (townObj.has("fakeMemberCount")) {

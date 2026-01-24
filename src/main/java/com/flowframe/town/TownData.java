@@ -8,16 +8,16 @@ import java.util.UUID;
 public class TownData {
     private final String name;
     private UUID owner; // Made non-final to allow ownership transfer
-    private final String founderName; // Store original founder name, never changes
+    private final String ownerName; // Store original owner name, never changes
     private ChatFormatting color;
     private BlockPos coords;
     private final String dimension;
     private int fakeMemberCount = -1; // -1 means use real count
 
-    public TownData(String name, UUID owner, String founderName, ChatFormatting color, BlockPos coords, String dimension) {
+    public TownData(String name, UUID owner, String ownerName, ChatFormatting color, BlockPos coords, String dimension) {
         this.name = name;
         this.owner = owner;
-        this.founderName = founderName;
+        this.ownerName = ownerName;
         this.color = color;
         this.coords = coords;
         this.dimension = dimension;
@@ -31,8 +31,8 @@ public class TownData {
         return owner;
     }
 
-    public String getFounderName() {
-        return founderName;
+    public String getOwnerName() {
+        return ownerName;
     }
 
     public ChatFormatting getColor() {

@@ -2,7 +2,6 @@ package com.flowframe;
 
 import com.flowframe.commands.EndToggleCommand;
 import com.flowframe.commands.FlowframeCommand;
-import com.flowframe.commands.SitCommand;
 import com.flowframe.commands.TownCommand;
 import com.flowframe.commands.TownAdminCommand;
 import com.flowframe.config.FlowframeConfig;
@@ -38,7 +37,6 @@ public class FlowframeMod implements ModInitializer {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             EndToggleCommand.register(dispatcher);
             FlowframeCommand.register(dispatcher);
-            SitCommand.register(dispatcher);
             TownCommand.register(dispatcher);
             TownAdminCommand.register(dispatcher);
         });
@@ -67,9 +65,8 @@ public class FlowframeMod implements ModInitializer {
             });
         });
         
-        // Handle player disconnect events to clean up sitting state and riding state
+        // Handle player disconnect events to clean up riding state
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
-            SitCommand.onPlayerDisconnect(handler.getPlayer());
             PlayerRidingManager.onPlayerDisconnect(handler.getPlayer());
         });
 

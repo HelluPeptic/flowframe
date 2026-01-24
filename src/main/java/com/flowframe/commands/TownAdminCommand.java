@@ -10,8 +10,11 @@ import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+
+import java.util.UUID;
 
 public class TownAdminCommand {
     
@@ -30,6 +33,11 @@ public class TownAdminCommand {
                                 .suggests(TOWN_SUGGESTIONS)
                                 .then(Commands.argument("count", IntegerArgumentType.integer(0))
                                         .executes(TownAdminCommand::forceMemberCount))))
+                .then(Commands.literal("forcetransferownership")
+                        .then(Commands.argument("town", StringArgumentType.word())
+                                .suggests(TOWN_SUGGESTIONS)
+                                .then(Commands.argument("player", EntityArgument.player())
+                                        .executes(TownAdminCommand::forceTransferOwnership))))
                 .then(Commands.literal("refreshteams")
                         .executes(TownAdminCommand::refreshTeams)));
     }
@@ -77,5 +85,54 @@ public class TownAdminCommand {
         TownManager.updateAllPlayerTeams();
         context.getSource().sendSuccess(() -> Component.literal("§a[TOWNADMIN] All team data refreshed!"), true);
         return 1;
-    }
-}
+    }    
+    private static int forceTransferOwnership(CommandContext<CommandSourceStack> context) {
+        String townName = StringArgumentType.getString(context, "town");
+        
+        try {
+            ServerPlayer newOwner = EntityArgument.getPlayer(context, "player");
+            
+            if (!TownManager.townExists(townName)) {
+                context.getSource().sendFailure(Component.literal("§c[TOWNADMIN] Town '" + townName + "' does not exist!"));
+                return 0;
+            }
+            
+            TownData town = TownManager.getTown(townName);
+            UUID oldOwnerUUID = town.getOwner();
+            UUID newOwnerUUID = newOwner.getUUID();
+            String newOwnerName = newOwner.getDisplayName().getString();
+            
+            // Check if new owner is already the current owner
+            if (oldOwnerUUID.equals(newOwnerUUID)) {
+                context.getSource().sendFailure(Component.literal("§c[TOWNADMIN] " + newOwnerName + " is already the owner of town '" + townName + "'!"));
+                return 0;
+            }
+            
+            // Add the new owner to the town if they aren't already a member
+            if (TownManager.getPlayerTown(newOwnerUUID) == null) {
+                TownManager.setPlayerTown(newOwnerUUID, townName);
+                context.getSource().sendSuccess(() -> Component.literal("§a[TOWNADMIN] Added " + newOwnerName + " to town '" + townName + "'"), true);
+            }
+            
+            // Transfer ownership - use the admin force transfer version
+            boolean success = TownManager.transferTownOwnership(townName, oldOwnerUUID, newOwnerUUID, newOwnerName);
+            
+            if (success) {
+                // Try to get old owner name from cache
+                String oldOwnerName = TownManager.getCachedPlayerName(oldOwnerUUID);
+                
+                context.getSource().sendSuccess(() -> Component.literal("§a[TOWNADMIN] Successfully transferred ownership of town '" + townName + "' from " + oldOwnerName + " to " + newOwnerName + "!"), true);
+                
+                // Notify the new owner if they're online
+                newOwner.sendSystemMessage(Component.literal("§6[TOWN] You are now the owner of town '" + townName + "'!"));
+                
+                return 1;
+            } else {
+                context.getSource().sendFailure(Component.literal("§c[TOWNADMIN] Failed to transfer ownership of town '" + townName + "'!"));
+                return 0;
+            }
+        } catch (Exception e) {
+            context.getSource().sendFailure(Component.literal("§c[TOWNADMIN] Error transferring ownership: " + e.getMessage()));
+            return 0;
+        }
+    }}
