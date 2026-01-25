@@ -50,6 +50,11 @@ public class TownManager {
         if (currentServer == null) return null;
         return new File(currentServer.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toFile(), "flowframe_player_towns.json");
     }
+    
+    private static File getPlayerNamesCacheFile() {
+        if (currentServer == null) return null;
+        return new File(currentServer.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toFile(), "flowframe_player_names.json");
+    }
 
     public static void initialize(MinecraftServer server) {
         currentServer = server;
@@ -142,10 +147,9 @@ public class TownManager {
                 String teamName = "town_" + name.toLowerCase();
                 PlayerTeam team = scoreboard.getPlayerTeam(teamName);
                 if (team != null) {
-                    // Keep team color as white so player names stay white
-                    team.setColor(ChatFormatting.WHITE);
-                    // Update prefix with new color and reset to white for player name
-                    team.setPlayerPrefix(Component.literal(town.getFormattedPrefix() + " §f"));
+                    // Don't set team color to avoid interfering with other mods' chat formatting
+                    // Update prefix with new color and reset to default for player name
+                    team.setPlayerPrefix(Component.literal(town.getFormattedPrefix() + " §r"));
                 }
             }
             
@@ -419,10 +423,9 @@ public class TownManager {
         }
         
         // Always update team properties to ensure they're current
-        // Set team color to white so player names stay white
-        team.setColor(ChatFormatting.WHITE);
-        // Prefix includes town color and resets to white for player name
-        team.setPlayerPrefix(Component.literal(town.getFormattedPrefix() + " §f"));
+        // Don't set team color to avoid interfering with other mods' chat formatting
+        // Prefix includes town color and resets to default for player name
+        team.setPlayerPrefix(Component.literal(town.getFormattedPrefix() + " §r"));
         
         // Add player to team if they're online
         ServerPlayer player = currentServer.getPlayerList().getPlayer(playerUuid);
@@ -642,8 +645,8 @@ public class TownManager {
     }
     
     private static void savePlayerNamesCache() {
-        File worldDir = new File(System.getProperty("user.dir"), "world");
-        File cacheFile = new File(worldDir, "flowframe_player_names.json");
+        File cacheFile = getPlayerNamesCacheFile();
+        if (cacheFile == null) return;
         
         try {
             Gson gson = new Gson();
@@ -657,10 +660,8 @@ public class TownManager {
     }
     
     private static void loadPlayerNamesCache() {
-        File worldDir = new File(System.getProperty("user.dir"), "world");
-        File cacheFile = new File(worldDir, "flowframe_player_names.json");
-        
-        if (!cacheFile.exists()) return;
+        File cacheFile = getPlayerNamesCacheFile();
+        if (cacheFile == null || !cacheFile.exists()) return;
         
         try {
             String json = Files.readString(cacheFile.toPath(), StandardCharsets.UTF_8);
