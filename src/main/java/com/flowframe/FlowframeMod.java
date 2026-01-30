@@ -1,19 +1,22 @@
 package com.flowframe;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.flowframe.commands.EndToggleCommand;
 import com.flowframe.commands.FlowframeCommand;
-import com.flowframe.commands.TownCommand;
 import com.flowframe.commands.TownAdminCommand;
+import com.flowframe.commands.TownCommand;
 import com.flowframe.config.FlowframeConfig;
+import com.flowframe.features.LinkedCommandFeature;
 import com.flowframe.town.TownManager;
-import com.flowframe.util.PlayerRidingManager;
 import com.flowframe.util.BlazeSpawnerProtection;
+import com.flowframe.util.PlayerRidingManager;
+
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class FlowframeMod implements ModInitializer {
 
@@ -40,6 +43,9 @@ public class FlowframeMod implements ModInitializer {
             TownCommand.register(dispatcher);
             TownAdminCommand.register(dispatcher);
         });
+        
+        // Register linked command feature
+        LinkedCommandFeature.register();
 
         // Register server lifecycle events for town system and config
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
