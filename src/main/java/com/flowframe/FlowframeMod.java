@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 
 import com.flowframe.commands.EndToggleCommand;
 import com.flowframe.commands.FlowframeCommand;
+import com.flowframe.commands.NetherToggleCommand;
 import com.flowframe.commands.TownAdminCommand;
 import com.flowframe.commands.TownCommand;
 import com.flowframe.config.FlowframeConfig;
@@ -39,6 +40,7 @@ public class FlowframeMod implements ModInitializer {
         // Register commands
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             EndToggleCommand.register(dispatcher);
+            NetherToggleCommand.register(dispatcher);
             FlowframeCommand.register(dispatcher);
             TownCommand.register(dispatcher);
             TownAdminCommand.register(dispatcher);
