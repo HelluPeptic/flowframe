@@ -13,6 +13,7 @@ public class TownData {
     private BlockPos coords;
     private final String dimension;
     private int fakeMemberCount = -1; // -1 means use real count
+    private long founderOnlySince = -1; // Timestamp when town became founder-only, -1 if not founder-only
 
     public TownData(String name, UUID owner, String ownerName, ChatFormatting color, BlockPos coords, String dimension) {
         this.name = name;
@@ -104,5 +105,18 @@ public class TownData {
 
     public void setOwner(UUID newOwner) {
         this.owner = newOwner;
+    }
+
+    // Autodisband methods
+    public long getFounderOnlySince() {
+        return founderOnlySince;
+    }
+
+    public void setFounderOnlySince(long timestamp) {
+        this.founderOnlySince = timestamp;
+    }
+
+    public boolean isFounderOnly() {
+        return founderOnlySince != -1;
     }
 }

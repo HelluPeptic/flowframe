@@ -15,6 +15,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -39,6 +42,7 @@ public class TownManager {
     // Map to store player names by UUID for offline players
     private static final Map<UUID, String> playerNames = new ConcurrentHashMap<>();
     private static MinecraftServer currentServer = null;
+    private static ScheduledExecutorService autoDisbandScheduler = null;
 
     // Persistence
     private static File getTownsFile() {
@@ -62,9 +66,12 @@ public class TownManager {
         loadPlayerTowns();
         loadPlayerNamesCache();
         updateAllPlayerTeams();
+        initializeFounderOnlyTowns(); // Check and start timers for founder-only towns
+        startAutoDisbandScheduler(server); // Start the periodic checker
     }
 
     public static void shutdown() {
+        stopAutoDisbandScheduler();
         saveTowns();
         savePlayerTowns();
         savePlayerNamesCache();
@@ -218,6 +225,9 @@ public class TownManager {
                     "town_rankup"
                 );
             }
+            
+            // Update founder-only status
+            updateTownFounderOnlyStatus(townName);
         }
     }
 
@@ -249,6 +259,9 @@ public class TownManager {
                     scoreboard.removePlayerTeam(team);
                 }
             }
+            
+            // Update founder-only status for the old town
+            updateTownFounderOnlyStatus(oldTown);
         }
         savePlayerTowns();
     }
@@ -514,7 +527,7 @@ public class TownManager {
     }
 
     // Persistence methods
-    private static void saveTowns() {
+    public static void saveTowns() {
         try {
             File file = getTownsFile();
             if (file == null) return;
@@ -534,6 +547,9 @@ public class TownManager {
                 townObj.addProperty("dimension", town.getDimension());
                 if (town.hasFakeMemberCount()) {
                     townObj.addProperty("fakeMemberCount", town.getFakeMemberCount());
+                }
+                if (town.isFounderOnly()) {
+                    townObj.addProperty("founderOnlySince", town.getFounderOnlySince());
                 }
                 townsList.add(townObj);
             }
@@ -606,6 +622,11 @@ public class TownManager {
                     // Load fake member count if present
                     if (townObj.has("fakeMemberCount")) {
                         townData.setFakeMemberCount(townObj.get("fakeMemberCount").getAsInt());
+                    }
+                    
+                    // Load founder-only timestamp if present
+                    if (townObj.has("founderOnlySince")) {
+                        townData.setFounderOnlySince(townObj.get("founderOnlySince").getAsLong());
                     }
                     
                     towns.put(name, townData);
@@ -725,6 +746,187 @@ public class TownManager {
             } catch (Exception e) {
                 System.err.println("[FLOWFRAME] Sound system error: " + e.getMessage());
             }
+        }
+    }
+
+    // === AUTODISBAND SYSTEM ===
+
+    /**
+     * Initialize founder-only status for all existing towns on server startup
+     */
+    private static void initializeFounderOnlyTowns() {
+        if (currentServer == null) return;
+
+        long currentTime = System.currentTimeMillis();
+        boolean hasChanges = false;
+
+        for (Map.Entry<String, TownData> entry : towns.entrySet()) {
+            String townName = entry.getKey();
+            TownData town = entry.getValue();
+
+            boolean isFounderOnly = isFounderOnlyTown(townName, town);
+
+            if (isFounderOnly && !town.isFounderOnly()) {
+                // Town is founder-only but doesn't have timestamp yet - start countdown
+                town.setFounderOnlySince(currentTime);
+                hasChanges = true;
+                System.out.println("[FLOWFRAME] Started autodisband countdown for founder-only town: " + townName);
+            } else if (!isFounderOnly && town.isFounderOnly()) {
+                // Town has members but still has timestamp - clear it
+                town.setFounderOnlySince(-1);
+                hasChanges = true;
+                System.out.println("[FLOWFRAME] Cleared autodisband countdown for town: " + townName + " (has members)");
+            }
+        }
+
+        if (hasChanges) {
+            saveTowns();
+        }
+    }
+
+    /**
+     * Check if town only contains the founder/owner
+     */
+    private static boolean isFounderOnlyTown(String townName, TownData town) {
+        int memberCount = 0;
+        boolean founderInTown = false;
+
+        for (Map.Entry<UUID, String> entry : playerTowns.entrySet()) {
+            if (entry.getValue().equals(townName)) {
+                memberCount++;
+                if (entry.getKey().equals(town.getOwner())) {
+                    founderInTown = true;
+                }
+            }
+        }
+
+        return memberCount == 1 && founderInTown;
+    }
+
+    /**
+     * Public method for commands to check if town is founder-only
+     */
+    public static boolean isFounderOnlyTown(String townName) {
+        TownData town = getTown(townName);
+        if (town == null) return false;
+        return isFounderOnlyTown(townName, town);
+    }
+
+    /**
+     * Check all towns and disband founder-only towns that exceeded the time limit
+     */
+    public static void checkAutoDisbandTowns() {
+        if (currentServer == null) return;
+
+        int autoDisbandDays = com.flowframe.config.FlowframeConfig.getTownAutoDisbandDays();
+        long autoDisbandMillis = autoDisbandDays * 24L * 60L * 60L * 1000L;
+        long currentTime = System.currentTimeMillis();
+
+        List<String> townsToDisband = new ArrayList<>();
+
+        for (Map.Entry<String, TownData> entry : towns.entrySet()) {
+            String townName = entry.getKey();
+            TownData town = entry.getValue();
+
+            boolean isFounderOnly = isFounderOnlyTown(townName, town);
+
+            if (isFounderOnly) {
+                if (town.getFounderOnlySince() == -1) {
+                    // Start countdown
+                    town.setFounderOnlySince(currentTime);
+                    saveTowns();
+                    System.out.println("[FLOWFRAME] Started autodisband countdown for founder-only town: " + townName);
+                } else {
+                    // Check if countdown expired
+                    long founderOnlyDuration = currentTime - town.getFounderOnlySince();
+                    if (founderOnlyDuration >= autoDisbandMillis) {
+                        townsToDisband.add(townName);
+                    }
+                }
+            } else {
+                // Town has members - clear countdown
+                if (town.isFounderOnly()) {
+                    town.setFounderOnlySince(-1);
+                    saveTowns();
+                    System.out.println("[FLOWFRAME] Stopped autodisband countdown for town: " + townName + " (gained members)");
+                }
+            }
+        }
+
+        // Disband expired towns
+        for (String townName : townsToDisband) {
+            TownData town = towns.get(townName);
+            System.out.println("[FLOWFRAME] Auto-disbanding founder-only town: " + townName + " (founder-only for " + autoDisbandDays + " days)");
+
+            ServerPlayer owner = currentServer.getPlayerList().getPlayer(town.getOwner());
+            if (owner != null) {
+                owner.sendSystemMessage(Component.literal("§c[TOWN] Your town '" + townName + "' has been automatically disbanded after " + autoDisbandDays + " days of being founder-only."));
+            }
+
+            disbandTown(townName);
+        }
+    }
+
+    /**
+     * Update founder-only status when members change
+     */
+    public static void updateTownFounderOnlyStatus(String townName) {
+        if (townName == null || !towns.containsKey(townName)) return;
+
+        TownData town = towns.get(townName);
+        boolean isFounderOnly = isFounderOnlyTown(townName, town);
+
+        if (isFounderOnly && !town.isFounderOnly()) {
+            // Town became founder-only
+            town.setFounderOnlySince(System.currentTimeMillis());
+            saveTowns();
+            System.out.println("[FLOWFRAME] Town " + townName + " became founder-only, starting countdown");
+        } else if (!isFounderOnly && town.isFounderOnly()) {
+            // Town gained members
+            town.setFounderOnlySince(-1);
+            saveTowns();
+            System.out.println("[FLOWFRAME] Town " + townName + " gained members, stopping countdown");
+        }
+    }
+
+    /**
+     * Start periodic autodisband checker
+     */
+    private static void startAutoDisbandScheduler(MinecraftServer server) {
+        if (autoDisbandScheduler != null) {
+            autoDisbandScheduler.shutdown();
+        }
+
+        autoDisbandScheduler = Executors.newScheduledThreadPool(1);
+
+        // Check every 6 hours
+        autoDisbandScheduler.scheduleWithFixedDelay(() -> {
+            try {
+                checkAutoDisbandTowns();
+            } catch (Exception e) {
+                System.err.println("[FLOWFRAME] Error during autodisband check: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }, 1, 6, TimeUnit.HOURS);
+
+        System.out.println("[FLOWFRAME] Autodisband scheduler started (checks every 6 hours)");
+    }
+
+    /**
+     * Stop autodisband scheduler
+     */
+    private static void stopAutoDisbandScheduler() {
+        if (autoDisbandScheduler != null) {
+            autoDisbandScheduler.shutdown();
+            try {
+                if (!autoDisbandScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                    autoDisbandScheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                autoDisbandScheduler.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+            autoDisbandScheduler = null;
         }
     }
 }

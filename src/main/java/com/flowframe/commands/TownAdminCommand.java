@@ -1,5 +1,6 @@
 package com.flowframe.commands;
 
+import com.flowframe.config.FlowframeConfig;
 import com.flowframe.town.TownData;
 import com.flowframe.town.TownManager;
 import com.mojang.brigadier.CommandDispatcher;
@@ -38,6 +39,13 @@ public class TownAdminCommand {
                                 .suggests(TOWN_SUGGESTIONS)
                                 .then(Commands.argument("player", EntityArgument.player())
                                         .executes(TownAdminCommand::forceTransferOwnership))))
+                .then(Commands.literal("autodisband")
+                        .then(Commands.argument("days", IntegerArgumentType.integer(1))
+                                .executes(TownAdminCommand::setAutoDisbandDays)))
+                .then(Commands.literal("autodisbandcountdown")
+                        .then(Commands.argument("town", StringArgumentType.word())
+                                .suggests(TOWN_SUGGESTIONS)
+                                .executes(TownAdminCommand::checkAutoDisbandCountdown)))
                 .then(Commands.literal("refreshteams")
                         .executes(TownAdminCommand::refreshTeams)));
     }
@@ -135,4 +143,62 @@ public class TownAdminCommand {
             context.getSource().sendFailure(Component.literal("§c[TOWNADMIN] Error transferring ownership: " + e.getMessage()));
             return 0;
         }
-    }}
+    }
+
+    private static int setAutoDisbandDays(CommandContext<CommandSourceStack> context) {
+        int days = IntegerArgumentType.getInteger(context, "days");
+        FlowframeConfig.setTownAutoDisbandDays(days);
+        context.getSource().sendSuccess(() -> Component.literal("§a[TOWNADMIN] Set auto-disband period to " + days + " days for founder-only towns."), true);
+        return 1;
+    }
+
+    private static int checkAutoDisbandCountdown(CommandContext<CommandSourceStack> context) {
+        String townName = StringArgumentType.getString(context, "town");
+        
+        TownData town = TownManager.getTown(townName);
+        if (town == null) {
+            context.getSource().sendFailure(Component.literal("§c[TOWNADMIN] Town '" + townName + "' not found!"));
+            return 0;
+        }
+        
+        boolean isFounderOnly = TownManager.isFounderOnlyTown(townName);
+        
+        if (!isFounderOnly) {
+            context.getSource().sendSuccess(() -> Component.literal("§e[TOWNADMIN] Town '" + townName + "' has multiple members. It will not be auto-disbanded."), false);
+            return 1;
+        }
+        
+        long founderOnlySince = town.getFounderOnlySince();
+        
+        // If founder-only but no timestamp, start it now
+        if (founderOnlySince == -1) {
+            town.setFounderOnlySince(System.currentTimeMillis());
+            TownManager.saveTowns();
+            founderOnlySince = town.getFounderOnlySince();
+            context.getSource().sendSuccess(() -> Component.literal("§a[TOWNADMIN] Started autodisband countdown for founder-only town '" + townName + "'!"), false);
+        }
+        
+        int autoDisbandDays = FlowframeConfig.getTownAutoDisbandDays();
+        long currentTime = System.currentTimeMillis();
+        long timeElapsed = currentTime - founderOnlySince;
+        long timeUntilDisband = (autoDisbandDays * 24L * 60L * 60L * 1000L) - timeElapsed;
+        
+        if (timeUntilDisband <= 0) {
+            context.getSource().sendSuccess(() -> Component.literal("§c[TOWNADMIN] Town '" + townName + "' is overdue for auto-disbanding (will be disbanded on next check)"), false);
+        } else {
+            long days = timeUntilDisband / (24L * 60L * 60L * 1000L);
+            long hours = (timeUntilDisband % (24L * 60L * 60L * 1000L)) / (60L * 60L * 1000L);
+            long minutes = (timeUntilDisband % (60L * 60L * 1000L)) / (60L * 1000L);
+            
+            if (days > 0) {
+                context.getSource().sendSuccess(() -> Component.literal("§e[TOWNADMIN] Founder-only town '" + townName + "' will be auto-disbanded in " + days + " days, " + hours + " hours"), false);
+            } else if (hours > 0) {
+                context.getSource().sendSuccess(() -> Component.literal("§e[TOWNADMIN] Founder-only town '" + townName + "' will be auto-disbanded in " + hours + " hours, " + minutes + " minutes"), false);
+            } else {
+                context.getSource().sendSuccess(() -> Component.literal("§e[TOWNADMIN] Founder-only town '" + townName + "' will be auto-disbanded in " + minutes + " minutes"), false);
+            }
+        }
+        
+        return 1;
+    }
+}
