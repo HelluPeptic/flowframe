@@ -1,6 +1,5 @@
 package com.flowframe.mixin;
 
-import com.flowframe.util.PathBlockSpeedTracker;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -13,10 +12,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class ServerLevelMixin {
     
     /**
-     * Clean up player data when they disconnect
+     * Clean up when players disconnect - no longer needed for simplified path block speed
      */
     @Inject(method = "removePlayerImmediately", at = @At("HEAD"))
     private void onPlayerDisconnect(ServerPlayer player, Entity.RemovalReason reason, CallbackInfo ci) {
-        PathBlockSpeedTracker.removePlayer(player.getUUID());
+        // Path block speed is now handled per-tick, no cleanup needed
     }
 }

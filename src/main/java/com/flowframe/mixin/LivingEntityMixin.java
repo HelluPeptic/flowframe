@@ -1,7 +1,6 @@
 package com.flowframe.mixin;
 
 import com.flowframe.config.FlowframeConfig;
-import com.flowframe.util.PathBlockSpeedTracker;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
@@ -24,16 +23,18 @@ public abstract class LivingEntityMixin {
     private static final Identifier PATH_SPEED_MODIFIER_ID = Identifier.fromNamespaceAndPath("flowframe", "path_speed");
 
     @Unique
-    private boolean flowframe$wasOnPathBlock = false;
+    private int flowframe$tickCounter = 0;
 
     @Unique
-    private boolean flowframe$hasModifier = false;
+    private boolean flowframe$lastPathState = false;
+
+    @Unique
+    private int flowframe$ticksSinceOffPath = 0;
 
     /**
-     * Applies speed boost when walking on path blocks with a 1-second grace
-     * period
+     * Applies speed boost when walking on path blocks - checks every 5 ticks
      */
-    @Inject(method = "tick", at = @At("HEAD"))
+    @Inject(method = "tick", at = @At("TAIL"))
     public void onTick(CallbackInfo ci) {
         LivingEntity entity = (LivingEntity) (Object) this;
 
@@ -41,42 +42,52 @@ public abstract class LivingEntityMixin {
             return;
         }
 
-        // Check if standing on a path block
-        BlockPos posBelow = player.blockPosition().below();
-        BlockState blockBelow = player.level().getBlockState(posBelow);
-        boolean isOnPathBlock = blockBelow.is(Blocks.DIRT_PATH);
-
-        if (isOnPathBlock) {
-            PathBlockSpeedTracker.updatePathBlockTime(player.getUUID());
-            flowframe$wasOnPathBlock = true;
+        // Check every 5 ticks to reduce attribute system overhead
+        flowframe$tickCounter++;
+        if (flowframe$tickCounter >= 5) {
+            flowframe$tickCounter = 0;
+            checkAndUpdatePathBlockSpeed(player);
         }
+    }
 
-        // Check if we should apply speed boost (on path block or within grace period)
-        boolean shouldApplyBoost = isOnPathBlock || PathBlockSpeedTracker.shouldApplySpeedBoost(player.getUUID());
+    @Unique
+    private void checkAndUpdatePathBlockSpeed(ServerPlayer player) {
+        // Check if standing on a path block (check current position and 1 block below)
+        BlockPos playerPos = player.blockPosition();
+        boolean isOnPathBlock = player.level().getBlockState(playerPos).is(Blocks.DIRT_PATH) ||
+                                player.level().getBlockState(playerPos.below()).is(Blocks.DIRT_PATH);
 
         AttributeInstance movementSpeed = player.getAttribute(Attributes.MOVEMENT_SPEED);
-        if (movementSpeed != null) {
-            if (shouldApplyBoost) {
-                if (!flowframe$hasModifier) {
-                    // Add the speed boost
-                    double multiplier = FlowframeConfig.getPathBlockSpeedMultiplier();
-                    AttributeModifier modifier = new AttributeModifier(
-                            PATH_SPEED_MODIFIER_ID,
-                            multiplier - 1.0, // Subtract 1 because it's additive
-                            AttributeModifier.Operation.ADD_MULTIPLIED_BASE
-                    );
-                    movementSpeed.addTransientModifier(modifier);
-                    flowframe$hasModifier = true;
-                }
-            } else {
-                // Remove the speed boost if it exists
-                if (flowframe$hasModifier) {
-                    movementSpeed.removeModifier(PATH_SPEED_MODIFIER_ID);
-                    flowframe$hasModifier = false;
-                }
+        if (movementSpeed == null) {
+            return;
+        }
 
-                if (flowframe$wasOnPathBlock) {
-                    flowframe$wasOnPathBlock = false;
+        if (isOnPathBlock) {
+            // Reset the off-path timer when on a path block
+            flowframe$ticksSinceOffPath = 0;
+            
+            // Add speed boost if not already present
+            if (!flowframe$lastPathState) {
+                movementSpeed.removeModifier(PATH_SPEED_MODIFIER_ID);
+                double multiplier = FlowframeConfig.getPathBlockSpeedMultiplier();
+                AttributeModifier modifier = new AttributeModifier(
+                        PATH_SPEED_MODIFIER_ID,
+                        multiplier - 1.0,
+                        AttributeModifier.Operation.ADD_MULTIPLIED_BASE
+                );
+                movementSpeed.addPermanentModifier(modifier);
+                flowframe$lastPathState = true;
+            }
+        } else {
+            // Not on path block - start/continue grace period
+            if (flowframe$lastPathState) {
+                flowframe$ticksSinceOffPath++;
+                
+                // Remove speed boost after 1 second (4 checks * 5 ticks = 20 ticks)
+                if (flowframe$ticksSinceOffPath >= 4) {
+                    movementSpeed.removeModifier(PATH_SPEED_MODIFIER_ID);
+                    flowframe$lastPathState = false;
+                    flowframe$ticksSinceOffPath = 0;
                 }
             }
         }
