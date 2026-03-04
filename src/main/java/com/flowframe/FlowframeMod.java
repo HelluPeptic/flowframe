@@ -12,6 +12,7 @@ import com.flowframe.config.FlowframeConfig;
 import com.flowframe.features.LinkedCommandFeature;
 import com.flowframe.town.TownManager;
 import com.flowframe.util.BlazeSpawnerProtection;
+import com.flowframe.util.EndermanGriefingPrevention;
 import com.flowframe.util.PlayerRidingManager;
 
 import net.fabricmc.api.ModInitializer;
@@ -36,6 +37,9 @@ public class FlowframeMod implements ModInitializer {
         
         // Initialize blaze spawner protection
         BlazeSpawnerProtection.initialize();
+        
+        // Initialize enderman griefing prevention
+        EndermanGriefingPrevention.initialize();
 
         // Register commands
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
