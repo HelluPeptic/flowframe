@@ -800,7 +800,7 @@ public class TownManager {
             }
         }
 
-        return memberCount == 1 && founderInTown;
+        return memberCount <= 4 && founderInTown;
     }
 
     /**
