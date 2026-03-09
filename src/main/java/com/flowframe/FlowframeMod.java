@@ -14,6 +14,7 @@ import com.flowframe.town.TownManager;
 import com.flowframe.util.BlazeSpawnerProtection;
 import com.flowframe.util.EndermanGriefingPrevention;
 import com.flowframe.util.PlayerRidingManager;
+import com.flowframe.util.SelfKillHeadDrop;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -40,6 +41,9 @@ public class FlowframeMod implements ModInitializer {
         
         // Initialize enderman griefing prevention
         EndermanGriefingPrevention.initialize();
+
+        // Initialize self-kill head drop
+        SelfKillHeadDrop.initialize();
 
         // Register commands
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
