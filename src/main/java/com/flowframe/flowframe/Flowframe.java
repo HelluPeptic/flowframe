@@ -1,19 +1,23 @@
 package com.flowframe.flowframe;
 
-import com.flowframe.flowframe.commands.EndToggleCommand;
-import com.flowframe.flowframe.commands.KeepInvCommand;
-import com.flowframe.flowframe.listeners.EndPortalListener;
-import com.flowframe.flowframe.listeners.GriefListener;
-import com.flowframe.flowframe.listeners.PhantomSpawnListener;
-import com.flowframe.flowframe.listeners.PlayerDeathListener;
-import com.flowframe.flowframe.listeners.RightClickHarvestListener;
-import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+
+import com.flowframe.flowframe.commands.EndToggleCommand;
+import com.flowframe.flowframe.commands.KeepInvCommand;
+import com.flowframe.flowframe.listeners.ChatListener;
+import com.flowframe.flowframe.listeners.ConnectionListener;
+import com.flowframe.flowframe.listeners.EndPortalListener;
+import com.flowframe.flowframe.listeners.GriefListener;
+import com.flowframe.flowframe.listeners.PhantomSpawnListener;
+import com.flowframe.flowframe.listeners.PlayerDeathListener;
+import com.flowframe.flowframe.listeners.RightClickHarvestListener;
+
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 
 public class Flowframe extends JavaPlugin {
 
@@ -30,6 +34,8 @@ public class Flowframe extends JavaPlugin {
 
         dataManager = new DataManager(this);
 
+        getServer().getPluginManager().registerEvents(new ChatListener(), this);
+        getServer().getPluginManager().registerEvents(new ConnectionListener(), this);
         getServer().getPluginManager().registerEvents(new GriefListener(), this);
         getServer().getPluginManager().registerEvents(new PhantomSpawnListener(), this);
         getServer().getPluginManager().registerEvents(new RightClickHarvestListener(), this);

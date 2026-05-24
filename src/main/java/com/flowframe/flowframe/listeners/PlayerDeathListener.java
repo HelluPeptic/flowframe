@@ -1,6 +1,7 @@
 package com.flowframe.flowframe.listeners;
 
-import com.flowframe.flowframe.DataManager;
+import java.util.Arrays;
+
 import org.bukkit.Material;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
@@ -16,7 +17,10 @@ import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.projectiles.ProjectileSource;
 
-import java.util.Arrays;
+import com.flowframe.flowframe.DataManager;
+
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 
 public class PlayerDeathListener implements Listener {
 
@@ -28,6 +32,14 @@ public class PlayerDeathListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerDeath(PlayerDeathEvent event) {
+        // Gray death message
+        Component deathMsg = event.deathMessage();
+        if (deathMsg != null) {
+            event.deathMessage(
+                    Component.empty().color(NamedTextColor.GRAY).append(deathMsg)
+            );
+        }
+
         Player player = event.getEntity();
         boolean selfKill = isSelfProjectileKill(player);
         boolean optedOut = dataManager.isOptedOut(player.getUniqueId());

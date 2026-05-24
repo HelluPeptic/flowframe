@@ -6,7 +6,7 @@
 
     <groupId>com.flowframe</groupId>
     <artifactId>flowframe</artifactId>
-    <version>1.1.17</version>
+    <version>1.2.7</version>
     <packaging>jar</packaging>
 
     <name>Flowframe</name>
@@ -29,6 +29,12 @@
             <groupId>dev.folia</groupId>
             <artifactId>folia-api</artifactId>
             <version>1.21.4-R0.1-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.luckperms</groupId>
+            <artifactId>api</artifactId>
+            <version>5.4</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>

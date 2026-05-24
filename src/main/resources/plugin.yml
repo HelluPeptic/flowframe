@@ -5,6 +5,7 @@ api-version: '1.21'
 description: QoL server-side plugin - grief protection, phantom relocation, right-click harvest
 authors: [ flowframe ]
 folia-supported: true
+soft-depend: [LuckPerms]
 
 commands:
   keepinv:

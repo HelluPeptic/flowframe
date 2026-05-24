@@ -1,9 +1,11 @@
+com\flowframe\flowframe\listeners\EndPortalListener.class
+com\flowframe\flowframe\listeners\PhantomSpawnListener.class
+com\flowframe\flowframe\listeners\ConnectionListener.class
+com\flowframe\flowframe\commands\EndToggleCommand.class
+com\flowframe\flowframe\Flowframe.class
 com\flowframe\flowframe\listeners\GriefListener.class
 com\flowframe\flowframe\DataManager.class
-com\flowframe\flowframe\listeners\EndPortalListener.class
 com\flowframe\flowframe\listeners\RightClickHarvestListener.class
-com\flowframe\flowframe\listeners\PhantomSpawnListener.class
-com\flowframe\flowframe\commands\EndToggleCommand.class
+com\flowframe\flowframe\listeners\ChatListener.class
 com\flowframe\flowframe\commands\KeepInvCommand.class
-com\flowframe\flowframe\Flowframe.class
 com\flowframe\flowframe\listeners\PlayerDeathListener.class
