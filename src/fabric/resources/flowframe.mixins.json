@@ -3,7 +3,8 @@
   "package": "com.flowframe.flowframe.mixin",
   "compatibilityLevel": "JAVA_17",
   "mixins": [
-    "EndPortalBlockMixin"
+    "EndPortalBlockMixin",
+    "FarmlandBlockMixin"
   ],
   "client": [],
   "server": [],

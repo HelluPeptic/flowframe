@@ -1,5 +1,0 @@
-# Flowframe configuration
-
-# Whether players can travel through end portals.
-# Default: false (end portals are blocked)
-end-portal-enabled: false
