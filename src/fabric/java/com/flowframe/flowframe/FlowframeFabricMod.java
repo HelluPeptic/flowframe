@@ -32,6 +32,7 @@ import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.network.packet.s2c.play.EntityPassengersSetS2CPacket;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -54,12 +55,11 @@ public class FlowframeFabricMod implements ModInitializer {
     private static final boolean LUCKPERMS_LOADED = FabricLoader.getInstance().isModLoaded("luckperms");
 
     private final DataManager dataManager;
-    // Rider UUID -> target UUID for the "carry" feature. Not real vehicle mounting —
-    // see handleCarrying() for why — so this map alone is the full source of truth
-    // for who's carrying whom, including multi-player stacks (a target here can
-    // itself be a rider of someone else).
-    private final Map<UUID, UUID> carryTargets = new java.util.HashMap<>();
-    private static final double CARRY_Y_OFFSET = 1.2D;
+    private final Set<UUID> headRiders = new java.util.HashSet<>();
+    // Rider UUID -> target UUID. Needed so that whenever a ride ends, for ANY reason
+    // (our own sneak handling, vanilla's own built-in dismount-on-sneak beating us to
+    // it, the rider disconnecting, etc.), we still know who to notify.
+    private final Map<UUID, UUID> headRiderTargets = new java.util.HashMap<>();
     private int tickCounter;
 
     // Phantoms are relocated to The End: DO_INSOMNIA is forced off (below) so vanilla's
@@ -142,6 +142,14 @@ public class FlowframeFabricMod implements ModInitializer {
                 .append(Text.literal(" » ").formatted(Formatting.DARK_GRAY))
                 .append(Text.literal(message.getSignedContent()).formatted(Formatting.WHITE));
             sender.server.getPlayerManager().broadcast(formatted, false);
+
+            // Returning false below skips vanilla's own "<Name> message" broadcast (so we
+            // don't get a duplicate, differently-formatted line) — but per PlayerManagerMixin
+            // in fabric-message-api, that also skips the CHAT_MESSAGE notify event entirely,
+            // which is what bridge mods like Discord4Fabric listen on to relay chat elsewhere.
+            // Fire it ourselves so those mods still see the message even though we've taken
+            // over the actual in-game broadcast.
+            ServerMessageEvents.CHAT_MESSAGE.invoker().onChatMessage(message, sender, params);
             return false;
         });
 
@@ -174,30 +182,39 @@ public class FlowframeFabricMod implements ModInitializer {
             if (rider.isSpectator() || clicked.isSpectator()) {
                 return ActionResult.PASS;
             }
-            if (rider.hasVehicle() || clicked.hasVehicle()) {
-                return ActionResult.PASS;
-            }
-            if (carryTargets.containsKey(rider.getUuid())) {
-                // Already carrying someone.
+            if (rider.hasVehicle()) {
                 return ActionResult.PASS;
             }
 
             // Right-clicking ANY player in an existing stack attaches the new rider to
             // the current top of that stack, not just to whoever was clicked directly —
-            // otherwise you have to click the exact (often visually obscured) top player.
-            UUID topId = resolveStackTop(clicked.getUuid());
-            if (topId.equals(rider.getUuid()) || findRiderOf(topId) != null) {
-                return ActionResult.PASS;
+            // otherwise you have to click the exact, often visually obscured, top player.
+            UUID topId = clicked.getUuid();
+            UUID nextRiderId = findRiderOf(topId);
+            while (nextRiderId != null) {
+                if (nextRiderId.equals(rider.getUuid())) {
+                    // Rider is already somewhere in this stack.
+                    return ActionResult.PASS;
+                }
+                topId = nextRiderId;
+                nextRiderId = findRiderOf(topId);
             }
             ServerPlayerEntity top = topId.equals(clicked.getUuid()) ? clicked : rider.server.getPlayerManager().getPlayer(topId);
-            if (top == null) {
+            if (top == null || top.hasPassengers()) {
                 return ActionResult.PASS;
             }
 
-            carryTargets.put(rider.getUuid(), top.getUuid());
-            rider.sendMessage(Text.literal("You are now carrying " + top.getName().getString() + ". Sneak to get off.").formatted(Formatting.GRAY), false);
-            top.sendMessage(Text.literal(rider.getName().getString() + " is now riding you. Sneak to shake them off.").formatted(Formatting.GRAY), false);
-            return ActionResult.SUCCESS;
+            if (rider.startRiding(top, true)) {
+                headRiders.add(rider.getUuid());
+                headRiderTargets.put(rider.getUuid(), top.getUuid());
+                // The vehicle's own client never receives the normal entity-tracking
+                // broadcast about its own passengers (a player doesn't "track" itself),
+                // so without this the target never learns they have a rider and keeps
+                // rendering them at the old spot. Send it directly to their connection.
+                top.networkHandler.sendPacket(new EntityPassengersSetS2CPacket(top));
+                return ActionResult.SUCCESS;
+            }
+            return ActionResult.PASS;
         });
 
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
@@ -213,7 +230,7 @@ public class FlowframeFabricMod implements ModInitializer {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            handleCarrying(server);
+            handleHeadRiding(server);
             if (server.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) {
                 server.getGameRules().get(GameRules.DO_MOB_GRIEFING).set(false, server);
             }
@@ -294,89 +311,45 @@ public class FlowframeFabricMod implements ModInitializer {
         }
     }
 
-    /**
-     * Repositions every active carry every tick via a real teleport packet rather
-     * than real vehicle mounting (Entity#startRiding/addPassenger).
-     *
-     * The reason: a mounted passenger's render position is never sent over the
-     * network — every connected client (including the rider's and target's own)
-     * independently recomputes it each tick from Entity#getMountedHeightOffset(),
-     * which vanilla never overrides for a PlayerEntity vehicle. A server-side-only
-     * fix to that method only affects clients that also run this mod; against
-     * plain vanilla clients the server's own bookkeeping position quietly drifts
-     * from what's actually rendered (you can see it land the rider inside a block
-     * and deal suffocation damage while the client still draws them at the old,
-     * wrong spot). Driving the rider's position with an explicit, authoritative
-     * teleport instead guarantees every client shows exactly what the server says,
-     * mod or no mod.
-     */
-    private void handleCarrying(net.minecraft.server.MinecraftServer server) {
-        if (carryTargets.isEmpty()) {
-            return;
-        }
+    private void handleHeadRiding(net.minecraft.server.MinecraftServer server) {
+        java.util.Iterator<UUID> iterator = headRiders.iterator();
+        while (iterator.hasNext()) {
+            UUID riderId = iterator.next();
+            ServerPlayerEntity rider = server.getPlayerManager().getPlayer(riderId);
 
-        Map<UUID, UUID> snapshot = new java.util.HashMap<>(carryTargets);
-        Set<UUID> toRemove = new java.util.HashSet<>();
-        for (Map.Entry<UUID, UUID> entry : snapshot.entrySet()) {
-            ServerPlayerEntity rider = server.getPlayerManager().getPlayer(entry.getKey());
-            ServerPlayerEntity target = server.getPlayerManager().getPlayer(entry.getValue());
-            if (rider == null || !rider.isAlive() || target == null || !target.isAlive()
-                    || rider.isSneaking() || target.isSneaking()) {
-                toRemove.add(entry.getKey());
-            }
-        }
-
-        // Anyone riding a rider that's about to be removed must come down too —
-        // otherwise they'd be left floating with no one left to follow.
-        boolean changed = true;
-        while (changed) {
-            changed = false;
-            for (Map.Entry<UUID, UUID> entry : snapshot.entrySet()) {
-                if (!toRemove.contains(entry.getKey()) && toRemove.contains(entry.getValue())) {
-                    toRemove.add(entry.getKey());
-                    changed = true;
-                }
-            }
-        }
-
-        for (UUID riderId : toRemove) {
-            carryTargets.remove(riderId);
-            notifyCarryEnded(server, riderId, snapshot.get(riderId));
-        }
-
-        for (Map.Entry<UUID, UUID> entry : carryTargets.entrySet()) {
-            ServerPlayerEntity rider = server.getPlayerManager().getPlayer(entry.getKey());
-            ServerPlayerEntity target = server.getPlayerManager().getPlayer(entry.getValue());
-            if (rider == null || target == null) {
+            if (rider == null || !rider.isAlive() || !rider.hasVehicle()) {
+                // Rider disconnected, died, or is simply no longer riding — including
+                // via vanilla's own built-in sneak-to-dismount, which can run before
+                // this tick and beat us to it. Whatever the cause, make sure the
+                // target still gets told the passenger is gone.
+                notifyTargetOfDismount(server, riderId);
+                iterator.remove();
                 continue;
             }
-            double y = target.getEyeY() + CARRY_Y_OFFSET;
-            rider.networkHandler.requestTeleport(target.getX(), y, target.getZ(), rider.getYaw(), rider.getPitch());
+
+            Entity vehicle = rider.getVehicle();
+            if (!(vehicle instanceof ServerPlayerEntity target)) {
+                notifyTargetOfDismount(server, riderId);
+                iterator.remove();
+                continue;
+            }
+
+            if (target.isSneaking()) {
+                target.removeAllPassengers();
+                notifyTargetOfDismount(server, riderId);
+                iterator.remove();
+            }
         }
     }
 
     /** Who, if anyone, is currently riding {@code targetId}? */
     private UUID findRiderOf(UUID targetId) {
-        for (Map.Entry<UUID, UUID> entry : carryTargets.entrySet()) {
+        for (Map.Entry<UUID, UUID> entry : headRiderTargets.entrySet()) {
             if (entry.getValue().equals(targetId)) {
                 return entry.getKey();
             }
         }
         return null;
-    }
-
-    /** Walks up a carry stack from {@code startId} to whoever is currently on top. */
-    private UUID resolveStackTop(UUID startId) {
-        UUID current = startId;
-        Set<UUID> visited = new java.util.HashSet<>();
-        while (visited.add(current)) {
-            UUID nextRider = findRiderOf(current);
-            if (nextRider == null) {
-                return current;
-            }
-            current = nextRider;
-        }
-        return current;
     }
 
     /**
@@ -428,17 +401,21 @@ public class FlowframeFabricMod implements ModInitializer {
         }
     }
 
-    private void notifyCarryEnded(net.minecraft.server.MinecraftServer server, UUID riderId, UUID targetId) {
-        ServerPlayerEntity rider = server.getPlayerManager().getPlayer(riderId);
-        if (rider != null) {
-            rider.sendMessage(Text.literal("You got down.").formatted(Formatting.GRAY), false);
-        }
+    /**
+     * Cleans up tracking state for a rider and, if we know who they were riding,
+     * tells that player's client directly that the passenger is gone. Needed for
+     * every removal path, not just the ones we trigger ourselves, because a
+     * player's own client never receives the normal entity-tracking broadcast
+     * about its own passengers.
+     */
+    private void notifyTargetOfDismount(net.minecraft.server.MinecraftServer server, UUID riderId) {
+        UUID targetId = headRiderTargets.remove(riderId);
         if (targetId == null) {
             return;
         }
         ServerPlayerEntity target = server.getPlayerManager().getPlayer(targetId);
         if (target != null) {
-            target.sendMessage(Text.literal("You're no longer being ridden.").formatted(Formatting.GRAY), false);
+            target.networkHandler.sendPacket(new EntityPassengersSetS2CPacket(target));
         }
     }
 
