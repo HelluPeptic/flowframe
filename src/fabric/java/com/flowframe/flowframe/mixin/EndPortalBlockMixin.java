@@ -10,6 +10,7 @@ import com.flowframe.flowframe.FlowframeFabricMod;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.EndPortalBlock;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityCollisionHandler;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
@@ -28,7 +29,7 @@ import net.minecraft.world.World;
 public class EndPortalBlockMixin {
 
     @Inject(method = "onEntityCollision", at = @At("HEAD"), cancellable = true)
-    private void flowframe$blockEndPortalWhenDisabled(BlockState state, World world, BlockPos pos, Entity entity, CallbackInfo ci) {
+    private void flowframe$blockEndPortalWhenDisabled(BlockState state, World world, BlockPos pos, Entity entity, EntityCollisionHandler collisionHandler, boolean bl, CallbackInfo ci) {
         if (world.isClient()) {
             return;
         }

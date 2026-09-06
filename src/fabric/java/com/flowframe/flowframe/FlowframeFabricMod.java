@@ -25,11 +25,15 @@ import net.luckperms.api.model.group.Group;
 import net.luckperms.api.model.user.User;
 import net.luckperms.api.node.NodeType;
 import net.luckperms.api.node.types.MetaNode;
+import net.minecraft.command.DefaultPermissions;
+import net.minecraft.command.permission.PermissionCheck;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.SpawnReason;
 import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.s2c.play.EntityPassengersSetS2CPacket;
@@ -43,8 +47,9 @@ import net.minecraft.util.ActionResult;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.GameRules;
 import net.minecraft.world.World;
+import net.minecraft.world.rule.GameRule;
+import net.minecraft.world.rule.GameRules;
 
 public class FlowframeFabricMod implements ModInitializer {
     public static final String MOD_ID = "flowframe";
@@ -55,6 +60,10 @@ public class FlowframeFabricMod implements ModInitializer {
     private static final boolean LUCKPERMS_LOADED = FabricLoader.getInstance().isModLoaded("luckperms");
 
     private final DataManager dataManager;
+    // ServerPlayerEntity's own "server" field is private, with no public getter on the
+    // entity itself — stashing the instance here once at startup (well before any player
+    // can trigger a callback that needs it) avoids relying on entity-side accessors at all.
+    private volatile net.minecraft.server.MinecraftServer serverInstance;
     private final Set<UUID> headRiders = new java.util.HashSet<>();
     // Rider UUID -> target UUID. Needed so that whenever a ride ends, for ANY reason
     // (our own sneak handling, vanilla's own built-in dismount-on-sneak beating us to
@@ -114,7 +123,7 @@ public class FlowframeFabricMod implements ModInitializer {
 
             dispatcher.register(
                 CommandManager.literal("endtoggle")
-                    .requires(source -> source.hasPermissionLevel(2))
+                    .requires(CommandManager.requirePermissionLevel(new PermissionCheck.Require(DefaultPermissions.GAMEMASTERS)))
                     .executes(context -> {
                         boolean nowEnabled = !dataManager.isEndPortalEnabled();
                         dataManager.setEndPortalEnabled(nowEnabled);
@@ -141,7 +150,7 @@ public class FlowframeFabricMod implements ModInitializer {
                 .formatted(nameColor)
                 .append(Text.literal(" » ").formatted(Formatting.DARK_GRAY))
                 .append(Text.literal(message.getSignedContent()).formatted(Formatting.WHITE));
-            sender.server.getPlayerManager().broadcast(formatted, false);
+            serverInstance.getPlayerManager().broadcast(formatted, false);
 
             // Returning false below skips vanilla's own "<Name> message" broadcast (so we
             // don't get a duplicate, differently-formatted line) — but per PlayerManagerMixin
@@ -199,12 +208,12 @@ public class FlowframeFabricMod implements ModInitializer {
                 topId = nextRiderId;
                 nextRiderId = findRiderOf(topId);
             }
-            ServerPlayerEntity top = topId.equals(clicked.getUuid()) ? clicked : rider.server.getPlayerManager().getPlayer(topId);
+            ServerPlayerEntity top = topId.equals(clicked.getUuid()) ? clicked : serverInstance.getPlayerManager().getPlayer(topId);
             if (top == null || top.hasPassengers()) {
                 return ActionResult.PASS;
             }
 
-            if (rider.startRiding(top, true)) {
+            if (rider.startRiding(top, true, true)) {
                 headRiders.add(rider.getUuid());
                 headRiderTargets.put(rider.getUuid(), top.getUuid());
                 // The vehicle's own client never receives the normal entity-tracking
@@ -231,12 +240,7 @@ public class FlowframeFabricMod implements ModInitializer {
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             handleHeadRiding(server);
-            if (server.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) {
-                server.getGameRules().get(GameRules.DO_MOB_GRIEFING).set(false, server);
-            }
-            if (server.getGameRules().getBoolean(GameRules.DO_INSOMNIA)) {
-                server.getGameRules().get(GameRules.DO_INSOMNIA).set(false, server);
-            }
+            forceGameRulesOff(server);
             handlePhantomSpawning(server);
             if (dataManager.isEndPortalEnabled()) {
                 return;
@@ -246,18 +250,19 @@ public class FlowframeFabricMod implements ModInitializer {
                 return;
             }
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-                if (player.getWorld().getRegistryKey() != World.END) {
+                if (player.getEntityWorld().getRegistryKey() != World.END) {
                     continue;
                 }
                 player.sendMessage(Text.literal("The End is currently disabled.").formatted(Formatting.RED), false);
                 ServerWorld overworld = server.getOverworld();
-                player.teleport(overworld, overworld.getSpawnPos().getX() + 0.5D, overworld.getSpawnPos().getY() + 1.0D, overworld.getSpawnPos().getZ() + 0.5D, 0.0F, 0.0F);
+                BlockPos spawnPos = server.getSpawnPoint().getPos();
+                player.teleport(overworld, spawnPos.getX() + 0.5D, spawnPos.getY() + 1.0D, spawnPos.getZ() + 0.5D, java.util.Set.of(), 0.0F, 0.0F, false);
             }
         });
 
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
-            server.getGameRules().get(GameRules.DO_MOB_GRIEFING).set(false, server);
-            server.getGameRules().get(GameRules.DO_INSOMNIA).set(false, server);
+            serverInstance = server;
+            forceGameRulesOff(server);
         });
     }
 
@@ -352,6 +357,18 @@ public class FlowframeFabricMod implements ModInitializer {
         return null;
     }
 
+    private void forceGameRulesOff(net.minecraft.server.MinecraftServer server) {
+        GameRules rules = server.getOverworld().getGameRules();
+        forceRuleOff(rules, GameRules.DO_MOB_GRIEFING, server);
+        forceRuleOff(rules, GameRules.SPAWN_PHANTOMS, server);
+    }
+
+    private void forceRuleOff(GameRules rules, GameRule rule, net.minecraft.server.MinecraftServer server) {
+        if (Boolean.TRUE.equals(rules.getValue(rule))) {
+            rules.setValue(rule, Boolean.FALSE, server);
+        }
+    }
+
     /**
      * Spawns Phantoms above players standing in The End, on a periodic check that
      * mirrors vanilla's own insomnia condition (DO_INSOMNIA is forced off above, so
@@ -364,7 +381,7 @@ public class FlowframeFabricMod implements ModInitializer {
         }
 
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            ServerWorld world = player.getServerWorld();
+            ServerWorld world = (ServerWorld) player.getEntityWorld();
             if (world.getRegistryKey() != World.END) {
                 continue;
             }
@@ -385,7 +402,7 @@ public class FlowframeFabricMod implements ModInitializer {
                 int dz = phantomRandom.nextInt(PHANTOM_HORIZONTAL_SPREAD * 2 + 1) - PHANTOM_HORIZONTAL_SPREAD;
                 int dy = PHANTOM_MIN_HEIGHT_ABOVE + phantomRandom.nextInt(PHANTOM_HEIGHT_ABOVE_RANGE);
                 BlockPos spawnPos = origin.add(dx, dy, dz);
-                if (spawnPos.getY() >= world.getTopY() - 4) {
+                if (spawnPos.getY() >= world.getTopYInclusive() - 4) {
                     continue;
                 }
                 if (!world.getBlockState(spawnPos).isAir()) {
@@ -420,29 +437,28 @@ public class FlowframeFabricMod implements ModInitializer {
     }
 
     private void teleportPlayerOutOfTheEnd(ServerPlayerEntity player) {
-        ServerWorld overworld = player.server.getOverworld();
-        if (overworld == null) {
-            return;
-        }
+        BlockPos spawnPos = serverInstance.getSpawnPoint().getPos();
         player.sendMessage(Text.literal("The End is currently disabled.").formatted(Formatting.RED), false);
-        player.requestTeleport(overworld.getSpawnPos().getX() + 0.5D, overworld.getSpawnPos().getY() + 1.0D, overworld.getSpawnPos().getZ() + 0.5D);
+        player.requestTeleport(spawnPos.getX() + 0.5D, spawnPos.getY() + 1.0D, spawnPos.getZ() + 0.5D);
     }
 
+    private static final EquipmentSlot[] ARMOR_AND_OFFHAND_SLOTS = {
+        EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.OFFHAND
+    };
+
     private void dropInventory(ServerPlayerEntity player) {
-        var inventory = player.getInventory();
-        for (ItemStack stack : inventory.main) {
+        PlayerInventory inventory = player.getInventory();
+        for (ItemStack stack : inventory.getMainStacks()) {
             if (!stack.isEmpty()) {
                 player.dropItem(stack.copy(), false, false);
             }
         }
-        for (ItemStack stack : inventory.armor) {
+        for (EquipmentSlot slot : ARMOR_AND_OFFHAND_SLOTS) {
+            ItemStack stack = player.getEquippedStack(slot);
             if (!stack.isEmpty()) {
                 player.dropItem(stack.copy(), false, false);
+                player.equipStack(slot, ItemStack.EMPTY);
             }
-        }
-        ItemStack offhand = inventory.offHand.get(0);
-        if (!offhand.isEmpty()) {
-            player.dropItem(offhand.copy(), false, false);
         }
         inventory.clear();
     }
