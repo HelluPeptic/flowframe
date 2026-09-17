@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "package": "com.flowframe.flowframe.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "EndPortalBlockMixin",
+    "FarmlandBlockMixin"
+  ],
+  "client": [],
+  "server": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
