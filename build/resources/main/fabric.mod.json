@@ -3,7 +3,7 @@
   "id": "flowframe",
   "version": "1.0.0",
   "name": "Flowframe",
-  "description": "A Fabric 1.21.11 QoL mod with chat formatting, keep inventory, join/leave messages, and end portal controls.",
+  "description": "A Fabric 26.3 QoL mod with chat formatting, keep inventory, join/leave messages, and end portal controls.",
   "authors": ["Flowframe"],
   "license": "MIT",
   "environment": "*",
@@ -14,9 +14,10 @@
     "flowframe.mixins.json"
   ],
   "depends": {
-    "fabricloader": ">=0.19.5",
-    "minecraft": "~1.21.11",
-    "fabric-api": ">=0.141.6"
+    "fabricloader": ">=0.20.1",
+    "minecraft": "~26.3",
+    "java": ">=25",
+    "fabric-api": ">=0.165.0"
   },
   "recommends": {
     "luckperms": "*"

@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.17.20'
+    id 'net.fabricmc.fabric-loom' version '1.19.3'
     id 'maven-publish'
 }
 
@@ -11,10 +11,11 @@ repositories {
 }
 
 dependencies {
+    // 26.x ships unobfuscated, so there's no mappings dependency and no remapping
+    // (mod* configurations) — code is written directly against Mojang's own names.
     minecraft "com.mojang:minecraft:${project.property('minecraft_version')}"
-    mappings "net.fabricmc:yarn:${project.property('yarn_mappings')}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.property('loader_version')}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.property('fabric_version')}"
+    implementation "net.fabricmc:fabric-loader:${project.property('loader_version')}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.property('fabric_version')}"
 
     // LuckPerms API only (interfaces/classes, not the mod itself) — used to read the
     // "chat-color" group meta. Actual LuckPerms mod must be installed on the server;
@@ -37,7 +38,7 @@ sourceSets {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 21
+    it.options.release = 25
 }
 
 test {
@@ -46,6 +47,9 @@ test {
 
 java {
     withSourcesJar()
+
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
 }
 
 processResources {

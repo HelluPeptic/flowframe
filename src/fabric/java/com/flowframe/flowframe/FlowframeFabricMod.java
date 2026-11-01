@@ -1,6 +1,7 @@
 package com.flowframe.flowframe;
 
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
@@ -11,7 +12,7 @@ import org.slf4j.LoggerFactory;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.fabricmc.fabric.api.entity.event.v1.ServerEntityWorldChangeEvents;
+import net.fabricmc.fabric.api.entity.event.v1.ServerEntityLevelChangeEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -25,31 +26,32 @@ import net.luckperms.api.model.group.Group;
 import net.luckperms.api.model.user.User;
 import net.luckperms.api.node.NodeType;
 import net.luckperms.api.node.types.MetaNode;
-import net.minecraft.command.DefaultPermissions;
-import net.minecraft.command.permission.PermissionCheck;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.entity.SpawnReason;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.s2c.play.EntityPassengersSetS2CPacket;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.stat.Stats;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
-import net.minecraft.world.rule.GameRule;
-import net.minecraft.world.rule.GameRules;
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundSetPassengersPacket;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.stats.Stats;
+import net.minecraft.util.Prediction;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.gamerules.GameRule;
+import net.minecraft.world.level.gamerules.GameRules;
 
 public class FlowframeFabricMod implements ModInitializer {
     public static final String MOD_ID = "flowframe";
@@ -60,10 +62,10 @@ public class FlowframeFabricMod implements ModInitializer {
     private static final boolean LUCKPERMS_LOADED = FabricLoader.getInstance().isModLoaded("luckperms");
 
     private final DataManager dataManager;
-    // ServerPlayerEntity's own "server" field is private, with no public getter on the
+    // ServerPlayer's own "server" field is private, with no public getter on the
     // entity itself — stashing the instance here once at startup (well before any player
     // can trigger a callback that needs it) avoids relying on entity-side accessors at all.
-    private volatile net.minecraft.server.MinecraftServer serverInstance;
+    private volatile MinecraftServer serverInstance;
     private final Set<UUID> headRiders = new java.util.HashSet<>();
     // Rider UUID -> target UUID. Needed so that whenever a ride ends, for ANY reason
     // (our own sneak handling, vanilla's own built-in dismount-on-sneak beating us to
@@ -71,8 +73,8 @@ public class FlowframeFabricMod implements ModInitializer {
     private final Map<UUID, UUID> headRiderTargets = new java.util.HashMap<>();
     private int tickCounter;
 
-    // Phantoms are relocated to The End: DO_INSOMNIA is forced off (below) so vanilla's
-    // own PhantomSpawner never fires anywhere, and this replicates just its "haven't
+    // Phantoms are relocated to The End: SPAWN_PHANTOMS is forced off (below) so vanilla's
+    // own phantom spawner never fires anywhere, and this replicates just its "haven't
     // slept in 3 days" condition against players standing in The End instead.
     private static final int PHANTOM_CHECK_PERIOD_TICKS = 200; // every 10s
     private static final int PHANTOM_INSOMNIA_TICKS = 72000; // 3 in-game days, matches vanilla
@@ -105,30 +107,30 @@ public class FlowframeFabricMod implements ModInitializer {
     }
 
     private void registerCommands() {
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+        CommandRegistrationCallback.EVENT.register((dispatcher, buildContext, selection) -> {
             dispatcher.register(
-                CommandManager.literal("keepinv")
+                Commands.literal("keepinv")
                     .executes(context -> {
-                        ServerCommandSource source = context.getSource();
-                        ServerPlayerEntity player = source.getPlayer();
+                        CommandSourceStack source = context.getSource();
+                        ServerPlayer player = source.getPlayer();
                         if (player == null) {
-                            source.sendFeedback(() -> Text.literal("This command can only be used by players."), false);
+                            source.sendSuccess(() -> Component.literal("This command can only be used by players."), false);
                             return 1;
                         }
-                        boolean nowOptedOut = dataManager.toggle(player.getUuid());
-                        player.sendMessage(Text.literal("Keep Inventory: " + (nowOptedOut ? "OFF" : "ON")).formatted(nowOptedOut ? Formatting.RED : Formatting.GREEN), false);
+                        boolean nowOptedOut = dataManager.toggle(player.getUUID());
+                        player.sendSystemMessage(Component.literal("Keep Inventory: " + (nowOptedOut ? "OFF" : "ON")).withStyle(nowOptedOut ? ChatFormatting.RED : ChatFormatting.GREEN));
                         return 1;
                     })
             );
 
             dispatcher.register(
-                CommandManager.literal("endtoggle")
-                    .requires(CommandManager.requirePermissionLevel(new PermissionCheck.Require(DefaultPermissions.GAMEMASTERS)))
+                Commands.literal("endtoggle")
+                    .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                     .executes(context -> {
                         boolean nowEnabled = !dataManager.isEndPortalEnabled();
                         dataManager.setEndPortalEnabled(nowEnabled);
-                        Text state = nowEnabled ? Text.literal("ENABLED").formatted(Formatting.GREEN) : Text.literal("DISABLED").formatted(Formatting.RED);
-                        context.getSource().getServer().getPlayerManager().broadcast(Text.literal("End portals are now ").append(state).append(Text.literal(".")), false);
+                        Component state = nowEnabled ? Component.literal("ENABLED").withStyle(ChatFormatting.GREEN) : Component.literal("DISABLED").withStyle(ChatFormatting.RED);
+                        context.getSource().getServer().getPlayerList().broadcastSystemMessage(Component.literal("End portals are now ").append(state).append(Component.literal(".")), false);
                         return 1;
                     })
             );
@@ -136,29 +138,29 @@ public class FlowframeFabricMod implements ModInitializer {
     }
 
     private void registerEvents() {
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            ServerPlayerEntity player = handler.player;
-            if (!dataManager.hasSeenPlayer(player.getUuid())) {
-                dataManager.markSeenPlayer(player.getUuid());
-                server.getPlayerManager().broadcast(Text.literal(player.getName().getString() + " joined the server for the first time! Welcome them!").formatted(Formatting.GOLD), false);
+        ServerPlayConnectionEvents.JOIN.register((listener, sender, server) -> {
+            ServerPlayer player = listener.player;
+            if (!dataManager.hasSeenPlayer(player.getUUID())) {
+                dataManager.markSeenPlayer(player.getUUID());
+                server.getPlayerList().broadcastSystemMessage(Component.literal(player.getName().getString() + " joined the server for the first time! Welcome them!").withStyle(ChatFormatting.GOLD), false);
             }
         });
 
-        ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((message, sender, params) -> {
-            Formatting nameColor = resolveGroupColor(sender);
-            Text formatted = Text.literal(sender.getName().getString())
-                .formatted(nameColor)
-                .append(Text.literal(" » ").formatted(Formatting.DARK_GRAY))
-                .append(Text.literal(message.getSignedContent()).formatted(Formatting.WHITE));
-            serverInstance.getPlayerManager().broadcast(formatted, false);
+        ServerMessageEvents.ALLOW_CHAT_MESSAGE.register((message, sender, boundChatType) -> {
+            ChatFormatting nameColor = resolveGroupColor(sender);
+            Component formatted = Component.literal(sender.getName().getString())
+                .withStyle(nameColor)
+                .append(Component.literal(" » ").withStyle(ChatFormatting.DARK_GRAY))
+                .append(Component.literal(message.signedContent()).withStyle(ChatFormatting.WHITE));
+            serverInstance.getPlayerList().broadcastSystemMessage(formatted, false);
 
             // Returning false below skips vanilla's own "<Name> message" broadcast (so we
-            // don't get a duplicate, differently-formatted line) — but per PlayerManagerMixin
+            // don't get a duplicate, differently-formatted line) — but per PlayerListMixin
             // in fabric-message-api, that also skips the CHAT_MESSAGE notify event entirely,
             // which is what bridge mods like Discord4Fabric listen on to relay chat elsewhere.
             // Fire it ourselves so those mods still see the message even though we've taken
             // over the actual in-game broadcast.
-            ServerMessageEvents.CHAT_MESSAGE.invoker().onChatMessage(message, sender, params);
+            ServerMessageEvents.CHAT_MESSAGE.invoker().onChatMessage(message, sender, boundChatType);
             return false;
         });
 
@@ -166,74 +168,74 @@ public class FlowframeFabricMod implements ModInitializer {
         // under normal circumstances a player should never actually arrive in The End
         // while it's disabled. This stays in place to catch edge cases (commands,
         // other mods/plugins, end gateways, etc.) that don't go through the block.
-        ServerEntityWorldChangeEvents.AFTER_PLAYER_CHANGE_WORLD.register((player, origin, destination) -> {
-            if (!dataManager.isEndPortalEnabled() && destination.getRegistryKey() == World.END) {
+        ServerEntityLevelChangeEvents.AFTER_PLAYER_CHANGE_LEVEL.register((player, origin, destination) -> {
+            if (!dataManager.isEndPortalEnabled() && destination.dimension() == Level.END) {
                 teleportPlayerOutOfTheEnd(player);
             }
         });
 
-        UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) -> {
-            if (world.isClient()) {
-                return ActionResult.PASS;
+        UseEntityCallback.EVENT.register((player, level, hand, entity, hitResult) -> {
+            if (level.isClientSide()) {
+                return InteractionResult.PASS;
             }
-            if (!(player instanceof ServerPlayerEntity rider)) {
-                return ActionResult.PASS;
+            if (!(player instanceof ServerPlayer rider)) {
+                return InteractionResult.PASS;
             }
-            if (hand != Hand.MAIN_HAND) {
-                return ActionResult.PASS;
+            if (hand != InteractionHand.MAIN_HAND) {
+                return InteractionResult.PASS;
             }
-            if (!rider.getStackInHand(hand).isEmpty() || !rider.getOffHandStack().isEmpty()) {
-                return ActionResult.PASS;
+            if (!rider.getItemInHand(hand).isEmpty() || !rider.getOffhandItem().isEmpty()) {
+                return InteractionResult.PASS;
             }
-            if (!(entity instanceof ServerPlayerEntity clicked) || clicked.getUuid().equals(rider.getUuid())) {
-                return ActionResult.PASS;
+            if (!(entity instanceof ServerPlayer clicked) || clicked.getUUID().equals(rider.getUUID())) {
+                return InteractionResult.PASS;
             }
             if (rider.isSpectator() || clicked.isSpectator()) {
-                return ActionResult.PASS;
+                return InteractionResult.PASS;
             }
-            if (rider.hasVehicle()) {
-                return ActionResult.PASS;
+            if (rider.isPassenger()) {
+                return InteractionResult.PASS;
             }
 
             // Right-clicking ANY player in an existing stack attaches the new rider to
             // the current top of that stack, not just to whoever was clicked directly —
             // otherwise you have to click the exact, often visually obscured, top player.
-            UUID topId = clicked.getUuid();
+            UUID topId = clicked.getUUID();
             UUID nextRiderId = findRiderOf(topId);
             while (nextRiderId != null) {
-                if (nextRiderId.equals(rider.getUuid())) {
+                if (nextRiderId.equals(rider.getUUID())) {
                     // Rider is already somewhere in this stack.
-                    return ActionResult.PASS;
+                    return InteractionResult.PASS;
                 }
                 topId = nextRiderId;
                 nextRiderId = findRiderOf(topId);
             }
-            ServerPlayerEntity top = topId.equals(clicked.getUuid()) ? clicked : serverInstance.getPlayerManager().getPlayer(topId);
-            if (top == null || top.hasPassengers()) {
-                return ActionResult.PASS;
+            ServerPlayer top = topId.equals(clicked.getUUID()) ? clicked : serverInstance.getPlayerList().getPlayer(topId);
+            if (top == null || top.isVehicle()) {
+                return InteractionResult.PASS;
             }
 
             if (rider.startRiding(top, true, true)) {
-                headRiders.add(rider.getUuid());
-                headRiderTargets.put(rider.getUuid(), top.getUuid());
+                headRiders.add(rider.getUUID());
+                headRiderTargets.put(rider.getUUID(), top.getUUID());
                 // The vehicle's own client never receives the normal entity-tracking
                 // broadcast about its own passengers (a player doesn't "track" itself),
                 // so without this the target never learns they have a rider and keeps
                 // rendering them at the old spot. Send it directly to their connection.
-                top.networkHandler.sendPacket(new EntityPassengersSetS2CPacket(top));
-                return ActionResult.SUCCESS;
+                top.connection.send(new ClientboundSetPassengersPacket(top));
+                return InteractionResult.SUCCESS;
             }
-            return ActionResult.PASS;
+            return InteractionResult.PASS;
         });
 
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
-            if (entity instanceof ServerPlayerEntity player) {
-                if (dataManager.isOptedOut(player.getUuid())) {
+            if (entity instanceof ServerPlayer player) {
+                if (dataManager.isOptedOut(player.getUUID())) {
                     dropInventory(player);
                 }
                 if (isSelfProjectileKill(player, damageSource)) {
                     ItemStack head = new ItemStack(Items.PLAYER_HEAD);
-                    player.dropItem(head, false, false);
+                    player.drop(head, false, Prediction.SERVER_ONLY);
                 }
             }
         });
@@ -249,14 +251,14 @@ public class FlowframeFabricMod implements ModInitializer {
             if (tickCounter % 100 != 0) {
                 return;
             }
-            for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-                if (player.getEntityWorld().getRegistryKey() != World.END) {
+            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                if (player.level().dimension() != Level.END) {
                     continue;
                 }
-                player.sendMessage(Text.literal("The End is currently disabled.").formatted(Formatting.RED), false);
-                ServerWorld overworld = server.getOverworld();
-                BlockPos spawnPos = server.getSpawnPoint().getPos();
-                player.teleport(overworld, spawnPos.getX() + 0.5D, spawnPos.getY() + 1.0D, spawnPos.getZ() + 0.5D, java.util.Set.of(), 0.0F, 0.0F, false);
+                player.sendSystemMessage(Component.literal("The End is currently disabled.").withStyle(ChatFormatting.RED));
+                ServerLevel overworld = server.overworld();
+                BlockPos spawnPos = server.getRespawnData().pos();
+                player.teleportTo(overworld, spawnPos.getX() + 0.5D, spawnPos.getY() + 1.0D, spawnPos.getZ() + 0.5D, Set.of(), 0.0F, 0.0F, false);
             }
         });
 
@@ -276,27 +278,27 @@ public class FlowframeFabricMod implements ModInitializer {
 
     /**
      * Looks up the LuckPerms "chat-color" meta value from the player's primary
-     * group and converts it to a Formatting. Falls back to white if LuckPerms
+     * group and converts it to a ChatFormatting. Falls back to white if LuckPerms
      * is absent, the player/group can't be resolved, or the meta key isn't set.
      *
      * Set the color on a group with:
      *   /lp group <group> meta set chat-color <minecraft-colour-name>
      * e.g. /lp group default meta set chat-color gray
      */
-    private Formatting resolveGroupColor(ServerPlayerEntity player) {
+    private ChatFormatting resolveGroupColor(ServerPlayer player) {
         if (!LUCKPERMS_LOADED) {
-            return Formatting.WHITE;
+            return ChatFormatting.WHITE;
         }
         try {
             LuckPerms lp = LuckPermsProvider.get();
-            User user = lp.getUserManager().getUser(player.getUuid());
+            User user = lp.getUserManager().getUser(player.getUUID());
             if (user == null) {
-                return Formatting.WHITE;
+                return ChatFormatting.WHITE;
             }
 
             Group group = lp.getGroupManager().getGroup(user.getPrimaryGroup());
             if (group == null) {
-                return Formatting.WHITE;
+                return ChatFormatting.WHITE;
             }
 
             String colorName = group.getNodes(NodeType.META).stream()
@@ -305,24 +307,29 @@ public class FlowframeFabricMod implements ModInitializer {
                     .findFirst()
                     .orElse(null);
             if (colorName == null) {
-                return Formatting.WHITE;
+                return ChatFormatting.WHITE;
             }
 
-            Formatting formatting = Formatting.byName(colorName.toLowerCase());
-            return formatting != null ? formatting : Formatting.WHITE;
+            // ChatFormatting no longer has a by-name lookup; its enum constant names are
+            // the upper-cased colour names ("dark_gray" -> DARK_GRAY).
+            try {
+                return ChatFormatting.valueOf(colorName.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                return ChatFormatting.WHITE;
+            }
         } catch (IllegalStateException e) {
             // LuckPerms mod is present but its provider isn't registered yet (e.g. very early startup).
-            return Formatting.WHITE;
+            return ChatFormatting.WHITE;
         }
     }
 
-    private void handleHeadRiding(net.minecraft.server.MinecraftServer server) {
+    private void handleHeadRiding(MinecraftServer server) {
         java.util.Iterator<UUID> iterator = headRiders.iterator();
         while (iterator.hasNext()) {
             UUID riderId = iterator.next();
-            ServerPlayerEntity rider = server.getPlayerManager().getPlayer(riderId);
+            ServerPlayer rider = server.getPlayerList().getPlayer(riderId);
 
-            if (rider == null || !rider.isAlive() || !rider.hasVehicle()) {
+            if (rider == null || !rider.isAlive() || !rider.isPassenger()) {
                 // Rider disconnected, died, or is simply no longer riding — including
                 // via vanilla's own built-in sneak-to-dismount, which can run before
                 // this tick and beat us to it. Whatever the cause, make sure the
@@ -333,14 +340,14 @@ public class FlowframeFabricMod implements ModInitializer {
             }
 
             Entity vehicle = rider.getVehicle();
-            if (!(vehicle instanceof ServerPlayerEntity target)) {
+            if (!(vehicle instanceof ServerPlayer target)) {
                 notifyTargetOfDismount(server, riderId);
                 iterator.remove();
                 continue;
             }
 
-            if (target.isSneaking()) {
-                target.removeAllPassengers();
+            if (target.isShiftKeyDown()) {
+                target.ejectPassengers();
                 notifyTargetOfDismount(server, riderId);
                 iterator.remove();
             }
@@ -357,38 +364,38 @@ public class FlowframeFabricMod implements ModInitializer {
         return null;
     }
 
-    private void forceGameRulesOff(net.minecraft.server.MinecraftServer server) {
-        GameRules rules = server.getOverworld().getGameRules();
-        forceRuleOff(rules, GameRules.DO_MOB_GRIEFING, server);
+    private void forceGameRulesOff(MinecraftServer server) {
+        GameRules rules = server.getGameRules();
+        forceRuleOff(rules, GameRules.MOB_GRIEFING, server);
         forceRuleOff(rules, GameRules.SPAWN_PHANTOMS, server);
     }
 
-    private void forceRuleOff(GameRules rules, GameRule rule, net.minecraft.server.MinecraftServer server) {
-        if (Boolean.TRUE.equals(rules.getValue(rule))) {
-            rules.setValue(rule, Boolean.FALSE, server);
+    private void forceRuleOff(GameRules rules, GameRule<Boolean> rule, MinecraftServer server) {
+        if (rules.get(rule)) {
+            rules.set(rule, false, server);
         }
     }
 
     /**
      * Spawns Phantoms above players standing in The End, on a periodic check that
-     * mirrors vanilla's own insomnia condition (DO_INSOMNIA is forced off above, so
+     * mirrors vanilla's own insomnia condition (SPAWN_PHANTOMS is forced off above, so
      * this is the only place Phantoms come from anymore).
      */
-    private void handlePhantomSpawning(net.minecraft.server.MinecraftServer server) {
+    private void handlePhantomSpawning(MinecraftServer server) {
         phantomTickCounter++;
         if (phantomTickCounter % PHANTOM_CHECK_PERIOD_TICKS != 0) {
             return;
         }
 
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            ServerWorld world = (ServerWorld) player.getEntityWorld();
-            if (world.getRegistryKey() != World.END) {
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            ServerLevel level = player.level();
+            if (level.dimension() != Level.END) {
                 continue;
             }
             if (player.isSpectator()) {
                 continue;
             }
-            int timeSinceRest = player.getStatHandler().getStat(Stats.CUSTOM.getOrCreateStat(Stats.TIME_SINCE_REST));
+            int timeSinceRest = player.getStats().getValue(Stats.CUSTOM.get(Stats.TIME_SINCE_REST));
             if (timeSinceRest < PHANTOM_INSOMNIA_TICKS) {
                 continue;
             }
@@ -396,22 +403,22 @@ public class FlowframeFabricMod implements ModInitializer {
                 continue;
             }
 
-            BlockPos origin = player.getBlockPos();
+            BlockPos origin = player.blockPosition();
             for (int attempt = 0; attempt < 3; attempt++) {
                 int dx = phantomRandom.nextInt(PHANTOM_HORIZONTAL_SPREAD * 2 + 1) - PHANTOM_HORIZONTAL_SPREAD;
                 int dz = phantomRandom.nextInt(PHANTOM_HORIZONTAL_SPREAD * 2 + 1) - PHANTOM_HORIZONTAL_SPREAD;
                 int dy = PHANTOM_MIN_HEIGHT_ABOVE + phantomRandom.nextInt(PHANTOM_HEIGHT_ABOVE_RANGE);
-                BlockPos spawnPos = origin.add(dx, dy, dz);
-                if (spawnPos.getY() >= world.getTopYInclusive() - 4) {
+                BlockPos spawnPos = origin.offset(dx, dy, dz);
+                if (spawnPos.getY() >= level.getMaxY() - 4) {
                     continue;
                 }
-                if (!world.getBlockState(spawnPos).isAir()) {
+                if (!level.getBlockState(spawnPos).isAir()) {
                     continue;
                 }
 
                 int count = 1 + phantomRandom.nextInt(2);
                 for (int i = 0; i < count; i++) {
-                    EntityType.PHANTOM.spawn(world, spawnPos, SpawnReason.NATURAL);
+                    EntityTypes.PHANTOM.spawn(level, spawnPos, EntitySpawnReason.NATURAL);
                 }
                 break;
             }
@@ -425,51 +432,51 @@ public class FlowframeFabricMod implements ModInitializer {
      * player's own client never receives the normal entity-tracking broadcast
      * about its own passengers.
      */
-    private void notifyTargetOfDismount(net.minecraft.server.MinecraftServer server, UUID riderId) {
+    private void notifyTargetOfDismount(MinecraftServer server, UUID riderId) {
         UUID targetId = headRiderTargets.remove(riderId);
         if (targetId == null) {
             return;
         }
-        ServerPlayerEntity target = server.getPlayerManager().getPlayer(targetId);
+        ServerPlayer target = server.getPlayerList().getPlayer(targetId);
         if (target != null) {
-            target.networkHandler.sendPacket(new EntityPassengersSetS2CPacket(target));
+            target.connection.send(new ClientboundSetPassengersPacket(target));
         }
     }
 
-    private void teleportPlayerOutOfTheEnd(ServerPlayerEntity player) {
-        BlockPos spawnPos = serverInstance.getSpawnPoint().getPos();
-        player.sendMessage(Text.literal("The End is currently disabled.").formatted(Formatting.RED), false);
-        player.requestTeleport(spawnPos.getX() + 0.5D, spawnPos.getY() + 1.0D, spawnPos.getZ() + 0.5D);
+    private void teleportPlayerOutOfTheEnd(ServerPlayer player) {
+        BlockPos spawnPos = serverInstance.getRespawnData().pos();
+        player.sendSystemMessage(Component.literal("The End is currently disabled.").withStyle(ChatFormatting.RED));
+        player.teleportTo(spawnPos.getX() + 0.5D, spawnPos.getY() + 1.0D, spawnPos.getZ() + 0.5D);
     }
 
     private static final EquipmentSlot[] ARMOR_AND_OFFHAND_SLOTS = {
         EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.OFFHAND
     };
 
-    private void dropInventory(ServerPlayerEntity player) {
-        PlayerInventory inventory = player.getInventory();
-        for (ItemStack stack : inventory.getMainStacks()) {
+    private void dropInventory(ServerPlayer player) {
+        Inventory inventory = player.getInventory();
+        for (ItemStack stack : inventory.getNonEquipmentItems()) {
             if (!stack.isEmpty()) {
-                player.dropItem(stack.copy(), false, false);
+                player.drop(stack.copy(), false, Prediction.SERVER_ONLY);
             }
         }
         for (EquipmentSlot slot : ARMOR_AND_OFFHAND_SLOTS) {
-            ItemStack stack = player.getEquippedStack(slot);
+            ItemStack stack = player.getItemBySlot(slot);
             if (!stack.isEmpty()) {
-                player.dropItem(stack.copy(), false, false);
-                player.equipStack(slot, ItemStack.EMPTY);
+                player.drop(stack.copy(), false, Prediction.SERVER_ONLY);
+                player.setItemSlot(slot, ItemStack.EMPTY);
             }
         }
-        inventory.clear();
+        inventory.clearContent();
     }
 
-    private boolean isSelfProjectileKill(ServerPlayerEntity player, DamageSource damageSource) {
-        Entity source = damageSource.getSource();
-        if (!(source instanceof net.minecraft.entity.projectile.PersistentProjectileEntity projectile)) {
+    private boolean isSelfProjectileKill(ServerPlayer player, DamageSource damageSource) {
+        Entity source = damageSource.getDirectEntity();
+        if (!(source instanceof AbstractArrow projectile)) {
             return false;
         }
-        if (projectile.getOwner() instanceof PlayerEntity owner) {
-            return owner.getUuid().equals(player.getUuid());
+        if (projectile.getOwner() instanceof Player owner) {
+            return owner.getUUID().equals(player.getUUID());
         }
         return false;
     }
