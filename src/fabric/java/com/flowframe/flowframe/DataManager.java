@@ -18,6 +18,7 @@ import com.google.gson.GsonBuilder;
  *   - which players have opted out of keep-inventory
  *   - which players have joined before (for the "first time" welcome message)
  *   - whether End portals are currently enabled
+ *   - whether Nether portals are currently enabled
  *
  * Every mutating call saves immediately, so nothing here depends on a clean
  * shutdown to be persisted correctly.
@@ -29,6 +30,9 @@ public class DataManager {
         Set<String> optedOut = new HashSet<>();
         Set<String> seenPlayers = new HashSet<>();
         boolean endPortalEnabled = false;
+        // Defaults to open so that save files written before this key existed (and
+        // fresh installs) don't suddenly lock everyone out of the Nether.
+        boolean netherPortalEnabled = true;
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -37,6 +41,7 @@ public class DataManager {
     private final Set<UUID> optedOut = new HashSet<>();
     private final Set<UUID> seenPlayers = new HashSet<>();
     private boolean endPortalEnabled = false;
+    private boolean netherPortalEnabled = true;
 
     public DataManager(Path file) {
         this.file = file;
@@ -84,6 +89,17 @@ public class DataManager {
         save();
     }
 
+    // --- Nether portal toggle ---
+
+    public boolean isNetherPortalEnabled() {
+        return netherPortalEnabled;
+    }
+
+    public void setNetherPortalEnabled(boolean enabled) {
+        this.netherPortalEnabled = enabled;
+        save();
+    }
+
     private void load() {
         if (!Files.exists(file)) {
             migrateLegacyKeepInvFile();
@@ -105,6 +121,7 @@ public class DataManager {
                 }
             }
             endPortalEnabled = state.endPortalEnabled;
+            netherPortalEnabled = state.netherPortalEnabled;
         } catch (IOException | RuntimeException ignored) {
             // Covers both file I/O errors and malformed/unexpected JSON (e.g. GSON's
             // JsonSyntaxException), so a corrupt file can't crash mod init.
@@ -157,6 +174,7 @@ public class DataManager {
                 state.seenPlayers.add(uuid.toString());
             }
             state.endPortalEnabled = endPortalEnabled;
+            state.netherPortalEnabled = netherPortalEnabled;
             try (Writer writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
                 GSON.toJson(state, writer);
             }

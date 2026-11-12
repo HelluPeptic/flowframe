@@ -30,11 +30,22 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundSetPassengersPacket;
+import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
+import net.minecraft.network.protocol.game.ClientboundSoundPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.players.PlayerList;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.stats.Stats;
 import net.minecraft.util.Prediction;
 import net.minecraft.world.InteractionHand;
@@ -49,6 +60,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.ResolvableProfile;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.gamerules.GameRule;
 import net.minecraft.world.level.gamerules.GameRules;
@@ -62,6 +74,7 @@ public class FlowframeFabricMod implements ModInitializer {
     private static final boolean LUCKPERMS_LOADED = FabricLoader.getInstance().isModLoaded("luckperms");
 
     private final DataManager dataManager;
+    private final HorseTraining horseTraining = new HorseTraining();
     // ServerPlayer's own "server" field is private, with no public getter on the
     // entity itself — stashing the instance here once at startup (well before any player
     // can trigger a callback that needs it) avoids relying on entity-side accessors at all.
@@ -85,12 +98,20 @@ public class FlowframeFabricMod implements ModInitializer {
     private final Random phantomRandom = new Random();
     private int phantomTickCounter;
 
-    // Exposed so EndPortalBlockMixin (which has no other way to reach mod state) can
-    // check isEndPortalEnabled() without needing a full dependency-injection setup.
+    // Volume for the sound that plays when a dimension is opened.
+    private static final float DIMENSION_OPEN_SOUND_VOLUME = 0.15F;
+
+    // Exposed so the portal mixins (which have no other way to reach mod state) can
+    // check isEndPortalEnabled()/isNetherPortalEnabled() without needing a full
+    // dependency-injection setup.
     private static FlowframeFabricMod instance;
 
     public static FlowframeFabricMod getInstance() {
         return instance;
+    }
+
+    public HorseTraining getHorseTraining() {
+        return horseTraining;
     }
 
     public FlowframeFabricMod() {
@@ -124,13 +145,47 @@ public class FlowframeFabricMod implements ModInitializer {
             );
 
             dispatcher.register(
+                Commands.literal("horsestats")
+                    .executes(context -> {
+                        CommandSourceStack source = context.getSource();
+                        ServerPlayer player = source.getPlayer();
+                        if (player == null) {
+                            source.sendSuccess(() -> Component.literal("This command can only be used by players."), false);
+                            return 1;
+                        }
+                        horseTraining.showStats(player);
+                        return 1;
+                    })
+            );
+
+            dispatcher.register(
                 Commands.literal("endtoggle")
                     .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                     .executes(context -> {
                         boolean nowEnabled = !dataManager.isEndPortalEnabled();
                         dataManager.setEndPortalEnabled(nowEnabled);
+                        MinecraftServer server = context.getSource().getServer();
                         Component state = nowEnabled ? Component.literal("ENABLED").withStyle(ChatFormatting.GREEN) : Component.literal("DISABLED").withStyle(ChatFormatting.RED);
-                        context.getSource().getServer().getPlayerList().broadcastSystemMessage(Component.literal("End portals are now ").append(state).append(Component.literal(".")), false);
+                        server.getPlayerList().broadcastSystemMessage(Component.literal("End portals are now ").append(state).append(Component.literal(".")), false);
+                        if (nowEnabled) {
+                            announceDimensionOpened(server, "The End", ChatFormatting.LIGHT_PURPLE, SoundEvents.END_PORTAL_SPAWN);
+                        }
+                        return 1;
+                    })
+            );
+
+            dispatcher.register(
+                Commands.literal("nethertoggle")
+                    .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
+                    .executes(context -> {
+                        boolean nowEnabled = !dataManager.isNetherPortalEnabled();
+                        dataManager.setNetherPortalEnabled(nowEnabled);
+                        MinecraftServer server = context.getSource().getServer();
+                        Component state = nowEnabled ? Component.literal("ENABLED").withStyle(ChatFormatting.GREEN) : Component.literal("DISABLED").withStyle(ChatFormatting.RED);
+                        server.getPlayerList().broadcastSystemMessage(Component.literal("Nether portals are now ").append(state).append(Component.literal(".")), false);
+                        if (nowEnabled) {
+                            announceDimensionOpened(server, "The Nether", ChatFormatting.DARK_RED, SoundEvents.PORTAL_TRAVEL);
+                        }
                         return 1;
                     })
             );
@@ -235,6 +290,8 @@ public class FlowframeFabricMod implements ModInitializer {
                 }
                 if (isSelfProjectileKill(player, damageSource)) {
                     ItemStack head = new ItemStack(Items.PLAYER_HEAD);
+                    // Without a profile the head renders as the default Steve skin.
+                    head.set(DataComponents.PROFILE, ResolvableProfile.createResolved(player.getGameProfile()));
                     player.drop(head, false, Prediction.SERVER_ONLY);
                 }
             }
@@ -242,6 +299,7 @@ public class FlowframeFabricMod implements ModInitializer {
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             handleHeadRiding(server);
+            horseTraining.tick(server);
             forceGameRulesOff(server);
             handlePhantomSpawning(server);
             if (dataManager.isEndPortalEnabled()) {
@@ -274,6 +332,29 @@ public class FlowframeFabricMod implements ModInitializer {
 
     public void setEndPortalEnabled(boolean enabled) {
         dataManager.setEndPortalEnabled(enabled);
+    }
+
+    public boolean isNetherPortalEnabled() {
+        return dataManager.isNetherPortalEnabled();
+    }
+
+    /**
+     * Shows every online player a big on-screen title announcing that a dimension has
+     * opened, along with a sound that fits that dimension. The sound is sent to each
+     * player at their own position, so everyone hears it at the same volume no matter
+     * where they are in the world.
+     */
+    private void announceDimensionOpened(MinecraftServer server, String dimensionName, ChatFormatting color, SoundEvent sound) {
+        PlayerList players = server.getPlayerList();
+        // Fade in 0.5s, stay 3.5s, fade out 1s (vanilla's default title timings).
+        players.broadcastAll(new ClientboundSetTitlesAnimationPacket(10, 70, 20));
+        players.broadcastAll(new ClientboundSetSubtitleTextPacket(Component.literal("is now open!").withStyle(ChatFormatting.GOLD)));
+        players.broadcastAll(new ClientboundSetTitleTextPacket(Component.literal(dimensionName).withStyle(color, ChatFormatting.BOLD)));
+
+        Holder<SoundEvent> soundHolder = BuiltInRegistries.SOUND_EVENT.wrapAsHolder(sound);
+        for (ServerPlayer player : players.getPlayers()) {
+            player.connection.send(new ClientboundSoundPacket(soundHolder, SoundSource.MASTER, player.getX(), player.getY(), player.getZ(), DIMENSION_OPEN_SOUND_VOLUME, 1.0F, player.getRandom().nextLong()));
+        }
     }
 
     /**
