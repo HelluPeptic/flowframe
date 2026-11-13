@@ -5,8 +5,11 @@
   "mixins": [
     "AbstractHorseMixin",
     "EndPortalBlockMixin",
+    "EntityRidingMixin",
     "FarmlandBlockMixin",
-    "NetherPortalBlockMixin"
+    "InteractionMixin",
+    "NetherPortalBlockMixin",
+    "PlayerListMixin"
   ],
   "client": [],
   "server": [],

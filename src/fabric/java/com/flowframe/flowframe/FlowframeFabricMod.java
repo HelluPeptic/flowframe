@@ -2,10 +2,8 @@ package com.flowframe.flowframe;
 
 import java.nio.file.Path;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +12,7 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerEntityLevelChangeEvents;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
@@ -34,7 +33,6 @@ import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.protocol.game.ClientboundSetPassengersPacket;
 import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
@@ -51,6 +49,7 @@ import net.minecraft.util.Prediction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityTypes;
@@ -79,11 +78,7 @@ public class FlowframeFabricMod implements ModInitializer {
     // entity itself — stashing the instance here once at startup (well before any player
     // can trigger a callback that needs it) avoids relying on entity-side accessors at all.
     private volatile MinecraftServer serverInstance;
-    private final Set<UUID> headRiders = new java.util.HashSet<>();
-    // Rider UUID -> target UUID. Needed so that whenever a ride ends, for ANY reason
-    // (our own sneak handling, vanilla's own built-in dismount-on-sneak beating us to
-    // it, the rider disconnecting, etc.), we still know who to notify.
-    private final Map<UUID, UUID> headRiderTargets = new java.util.HashMap<>();
+    private final HeadRiding headRiding = new HeadRiding();
     private int tickCounter;
 
     // Phantoms are relocated to The End: SPAWN_PHANTOMS is forced off (below) so vanilla's
@@ -112,6 +107,10 @@ public class FlowframeFabricMod implements ModInitializer {
 
     public HorseTraining getHorseTraining() {
         return horseTraining;
+    }
+
+    public HeadRiding getHeadRiding() {
+        return headRiding;
     }
 
     public FlowframeFabricMod() {
@@ -239,49 +238,21 @@ public class FlowframeFabricMod implements ModInitializer {
             if (hand != InteractionHand.MAIN_HAND) {
                 return InteractionResult.PASS;
             }
-            if (!rider.getItemInHand(hand).isEmpty() || !rider.getOffhandItem().isEmpty()) {
+            if (!rider.getItemInHand(hand).isEmpty()) {
                 return InteractionResult.PASS;
             }
-            if (!(entity instanceof ServerPlayer clicked) || clicked.getUUID().equals(rider.getUUID())) {
+            if (!(entity instanceof ServerPlayer clicked) || clicked == rider) {
                 return InteractionResult.PASS;
             }
-            if (rider.isSpectator() || clicked.isSpectator()) {
-                return InteractionResult.PASS;
-            }
-            if (rider.isPassenger()) {
-                return InteractionResult.PASS;
-            }
-
-            // Right-clicking ANY player in an existing stack attaches the new rider to
-            // the current top of that stack, not just to whoever was clicked directly —
-            // otherwise you have to click the exact, often visually obscured, top player.
-            UUID topId = clicked.getUUID();
-            UUID nextRiderId = findRiderOf(topId);
-            while (nextRiderId != null) {
-                if (nextRiderId.equals(rider.getUUID())) {
-                    // Rider is already somewhere in this stack.
-                    return InteractionResult.PASS;
-                }
-                topId = nextRiderId;
-                nextRiderId = findRiderOf(topId);
-            }
-            ServerPlayer top = topId.equals(clicked.getUUID()) ? clicked : serverInstance.getPlayerList().getPlayer(topId);
-            if (top == null || top.isVehicle()) {
-                return InteractionResult.PASS;
-            }
-
-            if (rider.startRiding(top, true, true)) {
-                headRiders.add(rider.getUUID());
-                headRiderTargets.put(rider.getUUID(), top.getUUID());
-                // The vehicle's own client never receives the normal entity-tracking
-                // broadcast about its own passengers (a player doesn't "track" itself),
-                // so without this the target never learns they have a rider and keeps
-                // rendering them at the old spot. Send it directly to their connection.
-                top.connection.send(new ClientboundSetPassengersPacket(top));
-                return InteractionResult.SUCCESS;
-            }
-            return InteractionResult.PASS;
+            return headRiding.tryMount(rider, clicked);
         });
+
+        ServerEntityEvents.ENTITY_LOAD.register((entity, level) -> headRiding.onEntityLoad(entity));
+
+        // A rider's head pokes into the ceiling sooner than a standing player's would, and
+        // they don't control where they're carried, so they don't suffocate in it.
+        ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) ->
+                !(source.is(DamageTypes.IN_WALL) && HeadRiding.isHeadRiding(entity)));
 
         ServerLivingEntityEvents.AFTER_DEATH.register((entity, damageSource) -> {
             if (entity instanceof ServerPlayer player) {
@@ -298,7 +269,7 @@ public class FlowframeFabricMod implements ModInitializer {
         });
 
         ServerTickEvents.END_SERVER_TICK.register(server -> {
-            handleHeadRiding(server);
+            headRiding.tick();
             horseTraining.tick(server);
             forceGameRulesOff(server);
             handlePhantomSpawning(server);
@@ -404,47 +375,6 @@ public class FlowframeFabricMod implements ModInitializer {
         }
     }
 
-    private void handleHeadRiding(MinecraftServer server) {
-        java.util.Iterator<UUID> iterator = headRiders.iterator();
-        while (iterator.hasNext()) {
-            UUID riderId = iterator.next();
-            ServerPlayer rider = server.getPlayerList().getPlayer(riderId);
-
-            if (rider == null || !rider.isAlive() || !rider.isPassenger()) {
-                // Rider disconnected, died, or is simply no longer riding — including
-                // via vanilla's own built-in sneak-to-dismount, which can run before
-                // this tick and beat us to it. Whatever the cause, make sure the
-                // target still gets told the passenger is gone.
-                notifyTargetOfDismount(server, riderId);
-                iterator.remove();
-                continue;
-            }
-
-            Entity vehicle = rider.getVehicle();
-            if (!(vehicle instanceof ServerPlayer target)) {
-                notifyTargetOfDismount(server, riderId);
-                iterator.remove();
-                continue;
-            }
-
-            if (target.isShiftKeyDown()) {
-                target.ejectPassengers();
-                notifyTargetOfDismount(server, riderId);
-                iterator.remove();
-            }
-        }
-    }
-
-    /** Who, if anyone, is currently riding {@code targetId}? */
-    private UUID findRiderOf(UUID targetId) {
-        for (Map.Entry<UUID, UUID> entry : headRiderTargets.entrySet()) {
-            if (entry.getValue().equals(targetId)) {
-                return entry.getKey();
-            }
-        }
-        return null;
-    }
-
     private void forceGameRulesOff(MinecraftServer server) {
         GameRules rules = server.getGameRules();
         forceRuleOff(rules, GameRules.MOB_GRIEFING, server);
@@ -503,24 +433,6 @@ public class FlowframeFabricMod implements ModInitializer {
                 }
                 break;
             }
-        }
-    }
-
-    /**
-     * Cleans up tracking state for a rider and, if we know who they were riding,
-     * tells that player's client directly that the passenger is gone. Needed for
-     * every removal path, not just the ones we trigger ourselves, because a
-     * player's own client never receives the normal entity-tracking broadcast
-     * about its own passengers.
-     */
-    private void notifyTargetOfDismount(MinecraftServer server, UUID riderId) {
-        UUID targetId = headRiderTargets.remove(riderId);
-        if (targetId == null) {
-            return;
-        }
-        ServerPlayer target = server.getPlayerList().getPlayer(targetId);
-        if (target != null) {
-            target.connection.send(new ClientboundSetPassengersPacket(target));
         }
     }
 
